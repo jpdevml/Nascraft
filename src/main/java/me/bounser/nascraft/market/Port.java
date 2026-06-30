@@ -37,13 +37,11 @@ public class Port {
     private final int restockMinMinutes;
     private final int restockMaxMinutes;
 
-    private final PortSchedule schedule;
-
     private final List<Item> items = new ArrayList<>();
     private final Map<String, Item> identifiers = new HashMap<>();
 
     public Port(String id, String displayName, String worldName, double x, double z, double radius,
-                int restockMinMinutes, int restockMaxMinutes, PortSchedule schedule) {
+                int restockMinMinutes, int restockMaxMinutes) {
         this.id = id;
         this.displayName = displayName;
         this.plainDisplayName = Formatter.extractPlainText(MiniMessage.miniMessage().deserialize(displayName));
@@ -53,7 +51,6 @@ public class Port {
         this.radius = radius;
         this.restockMinMinutes = restockMinMinutes;
         this.restockMaxMinutes = restockMaxMinutes;
-        this.schedule = schedule;
     }
 
     public void setupGoods() {
@@ -124,11 +121,6 @@ public class Port {
     public int getRestockMinMinutes() { return restockMinMinutes; }
 
     public int getRestockMaxMinutes() { return restockMaxMinutes; }
-
-    public PortSchedule getSchedule() { return schedule; }
-
-    /** Whether the port is open for trading right now (server local time). */
-    public boolean isOpen() { return schedule.isOpen(java.time.LocalTime.now()); }
 
     /** Adds each parent good's configured restock amount to its stock. */
     public void restock() {

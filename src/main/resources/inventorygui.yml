@@ -11,9 +11,12 @@ port-menu:
             28, 29, 30, 31, 32, 33, 34,
             37, 38, 39, 40, 41, 42, 43]
   # Port information item (name, goods count, restock window).
+  # Uses a real pack texture: PAPER + custom-model-data 7200 = the anchor icon
+  # (assets/nascraft/gui/port_info in CrusalisRome pack v6+). model-data: 0 disables it.
   info:
     slot: 4
-    material: 'lectern'
+    material: 'paper'
+    model-data: 7200
   # Page navigation.
   back-button:
     slot: 45
@@ -23,9 +26,9 @@ port-menu:
   fillers:
     black_stained_glass_pane: [0, 1, 2, 3, 5, 6, 7, 8, 9, 17, 18, 26, 27, 35, 36, 44, 46, 47, 48, 49, 50, 51, 52]
 
-# Ports directory: a read-only overview of every port, its open/closed status
-# and its trading hours. Opened with /market list (and by /market when the
-# player is not standing inside a port).
+# Ports directory: a read-only overview of every port and the goods it trades.
+# Opened with /market list (and by /market when the player is not standing inside
+# a port).
 directory-menu:
   size: 54
   ports:
@@ -33,9 +36,10 @@ directory-menu:
     slots: [10, 11, 12, 13, 14, 15, 16,
             19, 20, 21, 22, 23, 24, 25,
             28, 29, 30, 31, 32, 33, 34]
-    # Block shown for a port that is open / closed right now.
-    open-material: 'lime_concrete'
-    closed-material: 'red_concrete'
+    # Icon shown for each port entry. Uses a real pack texture: PAPER + custom-model-data 7201 =
+    # the ship icon (assets/nascraft/gui/port_entry in CrusalisRome pack v6+). model-data: 0 disables it.
+    material: 'paper'
+    model-data: 7201
   # Page navigation.
   back-button:
     slot: 45

@@ -5,7 +5,6 @@ import me.bounser.nascraft.config.lang.Lang;
 import me.bounser.nascraft.config.lang.Message;
 import me.bounser.nascraft.market.MarketManager;
 import me.bounser.nascraft.market.Port;
-import me.bounser.nascraft.market.PortStatus;
 import org.bukkit.Material;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
@@ -15,23 +14,20 @@ import java.util.HashMap;
 import java.util.List;
 
 /**
- * Chest GUI listing every port with its current open/closed state and opening
- * hours. Read-only: it exists so players can see, at a glance, where and when
- * they can trade. Stateless, like {@link PortMenu}.
+ * Chest GUI listing every port. Read-only: it exists so players can see, at a
+ * glance, where they can trade and what each port deals in. Stateless, like
+ * {@link PortMenu}.
  */
 public final class DirectoryMenu {
 
     private DirectoryMenu() { }
 
-    /** Ports sorted with open ones first, then alphabetically by display name. */
+    /** Ports sorted alphabetically by display name. */
     public static List<Port> sortedPorts() {
 
         List<Port> ports = new ArrayList<>(MarketManager.getInstance().getPorts());
 
-        ports.sort((a, b) -> {
-            if (a.isOpen() != b.isOpen()) return a.isOpen() ? -1 : 1;
-            return a.getPlainDisplayName().compareToIgnoreCase(b.getPlainDisplayName());
-        });
+        ports.sort((a, b) -> a.getPlainDisplayName().compareToIgnoreCase(b.getPlainDisplayName()));
 
         return ports;
     }
@@ -106,26 +102,19 @@ public final class DirectoryMenu {
         Config config = Config.getInstance();
         MarketMenuManager manager = MarketMenuManager.getInstance();
 
-        boolean open = port.isOpen();
+        Material material = config.getDirectoryMenuEntryMaterial();
+        int modelData = config.getDirectoryMenuEntryModelData();
 
-        Material material = open ? config.getDirectoryMenuOpenMaterial() : config.getDirectoryMenuClosedMaterial();
-
-        Message nameMessage = open ? Message.PORT_DIRECTORY_ENTRY_OPEN_NAME : Message.PORT_DIRECTORY_ENTRY_CLOSED_NAME;
-        Message loreMessage = open ? Message.PORT_DIRECTORY_ENTRY_OPEN_LORE : Message.PORT_DIRECTORY_ENTRY_CLOSED_LORE;
-
-        String name = manager.legacy(Lang.get().message(nameMessage)
+        String name = manager.legacy(Lang.get().message(Message.PORT_DIRECTORY_ENTRY_NAME)
                 .replace("[PORT]", port.getDisplayName()));
 
-        String lore = Lang.get().message(loreMessage)
+        String lore = Lang.get().message(Message.PORT_DIRECTORY_ENTRY_LORE)
                 .replace("[PORT]", port.getDisplayName())
-                .replace("[STATUS]", PortStatus.statusText(port))
-                .replace("[HOURS]", PortStatus.hoursText(port))
-                .replace("[NEXT]", PortStatus.nextChangeText(port))
                 .replace("[GOODS]", String.valueOf(port.getParentItems().size()))
                 .replace("[WORLD]", port.getWorldName())
                 .replace("[X]", String.valueOf((int) port.getCenterX()))
                 .replace("[Z]", String.valueOf((int) port.getCenterZ()));
 
-        return manager.generateItemStack(material, name, manager.legacyLines(lore));
+        return manager.generateItemStack(material, modelData, name, manager.legacyLines(lore));
     }
 }

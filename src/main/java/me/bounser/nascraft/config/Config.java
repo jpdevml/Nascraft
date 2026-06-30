@@ -8,7 +8,6 @@ import me.bounser.nascraft.discord.linking.LinkingMethod;
 import me.bounser.nascraft.market.GoodSettings;
 import me.bounser.nascraft.market.MarketManager;
 import me.bounser.nascraft.market.Port;
-import me.bounser.nascraft.market.PortSchedule;
 import me.bounser.nascraft.market.unit.Item;
 import org.bukkit.Material;
 import org.bukkit.configuration.ConfigurationSection;
@@ -240,32 +239,8 @@ public class Config {
                 ports.getDouble(base + ".location.z"),
                 ports.getDouble(base + ".location.radius", ports.getDouble("defaults.radius", 40)),
                 ports.getInt(base + ".restock.min-minutes", ports.getInt("defaults.restock.min-minutes", 45)),
-                ports.getInt(base + ".restock.max-minutes", ports.getInt("defaults.restock.max-minutes", 90)),
-                getPortSchedule(portId)
+                ports.getInt(base + ".restock.max-minutes", ports.getInt("defaults.restock.max-minutes", 90))
         );
-    }
-
-    /**
-     * Resolves a port's opening hours. Order: the port's own schedule overrides
-     * the defaults.schedule block; a port with neither (and no explicit
-     * always-open) is treated as always open for backwards compatibility.
-     */
-    public PortSchedule getPortSchedule(String portId) {
-
-        String base = "ports." + portId + ".schedule";
-
-        if (ports.getBoolean(base + ".always-open", false)) return PortSchedule.alwaysOpen();
-
-        List<String> windows = ports.getStringList(base + ".windows");
-
-        if (windows.isEmpty()) {
-            if (ports.getBoolean("defaults.schedule.always-open", false)) return PortSchedule.alwaysOpen();
-            windows = ports.getStringList("defaults.schedule.windows");
-        }
-
-        if (windows.isEmpty()) return PortSchedule.alwaysOpen();
-
-        return PortSchedule.fromStrings(windows, portId);
     }
 
     public Set<String> getPortGoods(String portId) {
@@ -493,6 +468,11 @@ public class Config {
         return materialOrDefault(inventorygui.getString("port-menu.info.material"), Material.LECTERN);
     }
 
+    /** Custom-model-data for the port-info icon (0 = none; use the plain material). */
+    public int getPortMenuInfoModelData() {
+        return inventorygui.getInt("port-menu.info.model-data", 0);
+    }
+
     public int getPortMenuNextSlot() {
         return inventorygui.getInt("port-menu.next-button.slot", 53);
     }
@@ -536,12 +516,13 @@ public class Config {
                 28, 29, 30, 31, 32, 33, 34);
     }
 
-    public Material getDirectoryMenuOpenMaterial() {
-        return materialOrDefault(inventorygui.getString("directory-menu.ports.open-material"), Material.LIME_CONCRETE);
+    public Material getDirectoryMenuEntryMaterial() {
+        return materialOrDefault(inventorygui.getString("directory-menu.ports.material"), Material.PAPER);
     }
 
-    public Material getDirectoryMenuClosedMaterial() {
-        return materialOrDefault(inventorygui.getString("directory-menu.ports.closed-material"), Material.RED_CONCRETE);
+    /** Custom-model-data for each directory port entry (0 = none; use the plain material). */
+    public int getDirectoryMenuEntryModelData() {
+        return inventorygui.getInt("directory-menu.ports.model-data", 0);
     }
 
     public int getDirectoryMenuNextSlot() {

@@ -233,13 +233,6 @@ public class SellInvListener implements Listener {
             return;
         }
 
-        if (!player.hasPermission("nascraft.ports.bypass") && !port.isOpen()) {
-            me.bounser.nascraft.market.PortStatus.sendClosed(player, port);
-            // Closing returns the deposits via onClose.
-            scheduleClose(player);
-            return;
-        }
-
         // Take ownership of the tracked items before doing anything with them.
         deposits.remove(player.getUniqueId());
 

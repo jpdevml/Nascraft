@@ -262,12 +262,6 @@ public class InventoryListener implements Listener {
             return false;
         }
 
-        // Closed: refuse the trade but leave the menu open so prices stay browsable.
-        if (!port.isOpen()) {
-            me.bounser.nascraft.market.PortStatus.sendClosed(player, port);
-            return false;
-        }
-
         return true;
     }
 

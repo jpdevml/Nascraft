@@ -495,23 +495,12 @@ not_in_port: "<gradient:#FB6363:#C4B3FD>✘ There is no port here. Travel to a p
 port_restocked: "<gradient:#00ff6b:#00ffae>⚓ [PORT] <gradient:#00ff6b:#00ffae>has been restocked with fresh goods!</gradient>"
 port_menu_title: "⚓ [PORT]"
 port_info_name: "<gradient:#4fc3f7:#81d4fa>[PORT]</gradient>"
-port_info_lore: "<color:#8a8a8a>Goods traded here: <color:#ffae2b>[GOODS]</color>\n<color:#8a8a8a>Restocks every <color:#ffae2b>[MIN]-[MAX] minutes</color>\n<color:#8a8a8a>Status: [STATUS] <color:#8a8a8a>[NEXT]\n<color:#8a8a8a>Hours: <color:#ffae2b>[HOURS]</color>"
+port_info_lore: "<color:#8a8a8a>Goods traded here: <color:#ffae2b>[GOODS]</color>\n<color:#8a8a8a>Restocks every <color:#ffae2b>[MIN]-[MAX] minutes</color>"
 port_list_header: "<gradient:#4fc3f7:#81d4fa>Ports:</gradient>"
 port_list_segment: "<color:#8a8a8a> ⚓ <color:#ffae2b>[PORT]</color> <color:#8a8a8a>([ID]) - [WORLD] [X], [Z]</color>"
 port_not_found: "<gradient:#FB6363:#C4B3FD>✘ Unknown port: <bold>[PORT]</bold></gradient>"
 
-# Port opening hours
-port_closed: "<gradient:#FB6363:#C4B3FD>✘ [PORT] <gradient:#FB6363:#C4B3FD>is closed right now.</gradient>\n<color:#8a8a8a>Trading hours: <color:#ffae2b>[HOURS]</color>"
-port_status_open: "<color:#3bd16f>● Open</color>"
-port_status_closed: "<color:#FB6363>● Closed</color>"
-port_hours_always: "<color:#3bd16f>Always open</color>"
-port_hours_segment: "[WINDOW]"
-port_opens_in: "<color:#8a8a8a>(opens in <color:#ffae2b>[TIME]</color>)"
-port_closes_in: "<color:#8a8a8a>(closes in <color:#ffae2b>[TIME]</color>)"
-
 # Ports directory menu
 port_directory_title: "⚓ Ports Directory"
-port_directory_entry_open_name: "<color:#3bd16f>● </color>[PORT]"
-port_directory_entry_closed_name: "<color:#FB6363>● </color>[PORT]"
-port_directory_entry_open_lore: "<color:#8a8a8a>Status: [STATUS] <color:#8a8a8a>[NEXT]\n<color:#8a8a8a>Hours: <color:#ffae2b>[HOURS]</color>\n<color:#8a8a8a>Goods traded: <color:#ffae2b>[GOODS]</color>\n<color:#8a8a8a>Location: <color:#ffae2b>[WORLD] [X], [Z]</color>"
-port_directory_entry_closed_lore: "<color:#8a8a8a>Status: [STATUS] <color:#8a8a8a>[NEXT]\n<color:#8a8a8a>Hours: <color:#ffae2b>[HOURS]</color>\n<color:#8a8a8a>Goods traded: <color:#ffae2b>[GOODS]</color>\n<color:#8a8a8a>Location: <color:#ffae2b>[WORLD] [X], [Z]</color>"
+port_directory_entry_name: "<gradient:#4fc3f7:#81d4fa>[PORT]</gradient>"
+port_directory_entry_lore: "<color:#8a8a8a>Goods traded: <color:#ffae2b>[GOODS]</color>\n<color:#8a8a8a>Location: <color:#ffae2b>[WORLD] [X], [Z]</color>"

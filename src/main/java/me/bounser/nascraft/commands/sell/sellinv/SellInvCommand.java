@@ -105,11 +105,6 @@ public class SellInvCommand extends Command {
                     return;
                 }
             }
-
-            if (!port.isOpen() && !player.hasPermission("nascraft.ports.bypass")) {
-                me.bounser.nascraft.market.PortStatus.sendClosed(player, port);
-                return;
-            }
         }
 
         open(player, port);

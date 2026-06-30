@@ -16,22 +16,8 @@
 #   - A port that PRODUCES a good: low initial-price, high starting-stock, high restock-amount.
 #   - A port that DEMANDS a good: high initial-price, low starting-stock, low restock-amount.
 #
-# OPENING HOURS (schedule)
-#   A port trades only during its open windows, given in real-world SERVER LOCAL
-#   time as HH:mm-HH:mm (24h). Outside every window the port is closed: players
-#   can still open its menu to browse prices, but buying and selling are refused
-#   (the 'nascraft.ports.bypass' permission ignores this, like the radius check).
-#   A window may wrap past midnight, e.g. "22:00-02:00".
-#
-#     schedule:
-#       windows:
-#         - "08:00-12:00"
-#         - "14:00-22:00"
-#
-#   A port with no schedule (and no default below) is always open. To force a
-#   port open regardless of the default, set: schedule: { always-open: true }
-#
-#   Players can see every port's status and hours in-game with /market list.
+# Ports are always open — there are no trading-hours windows. Stock refills on the
+# restock timer (restock.min-minutes / max-minutes) configured per port or below.
 
 defaults:
   radius: 40
@@ -39,10 +25,6 @@ defaults:
     min-minutes: 45
     max-minutes: 90
     amount: 64
-  # Default opening hours applied to every port that does not define its own.
-  # Leave 'windows' empty (or remove this block) to make ports always open.
-  schedule:
-    windows: []
 
 ports:
 
@@ -57,11 +39,6 @@ ports:
     restock:
       min-minutes: 40
       max-minutes: 80
-    # Open mornings and afternoons; closed midday and overnight.
-    schedule:
-      windows:
-        - "08:00-12:00"
-        - "14:00-22:00"
     goods:
       cod:
         initial-price: 3
@@ -108,10 +85,6 @@ ports:
       x: 1000
       z: 1000
       radius: 50
-    # A late-running outpost: open into the small hours (window wraps midnight).
-    schedule:
-      windows:
-        - "10:00-02:00"
     goods:
       iron_ingot:
         initial-price: 7
@@ -154,9 +127,6 @@ ports:
       x: -1000
       z: 500
       radius: 45
-    # Always open (no schedule block needed, shown here for clarity).
-    schedule:
-      always-open: true
     goods:
       oak_log:
         initial-price: 1

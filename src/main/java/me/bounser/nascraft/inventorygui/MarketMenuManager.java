@@ -191,6 +191,16 @@ public class MarketMenuManager {
     }
 
     public ItemStack generateItemStack(Material material, String name, List<String> lore) {
+        return generateItemStack(material, 0, name, lore);
+    }
+
+    /**
+     * Build a menu icon. When {@code modelData > 0} the item is given that custom-model-data so the
+     * resource pack can swap in a real texture (instead of the generated vanilla {@code material}
+     * icon). Model data is written to BOTH the float and string CMD lists so it matches
+     * range_dispatch and select packs alike — same convention as the trade-good pack items.
+     */
+    public ItemStack generateItemStack(Material material, int modelData, String name, List<String> lore) {
 
         ItemStack itemStack = new ItemStack(material);
 
@@ -200,6 +210,12 @@ public class MarketMenuManager {
             meta.setDisplayName(name);
             meta.setLore(lore);
             meta.setAttributeModifiers(null);
+            if (modelData > 0) {
+                org.bukkit.inventory.meta.components.CustomModelDataComponent cmd = meta.getCustomModelDataComponent();
+                cmd.setFloats(java.util.Collections.singletonList((float) modelData));
+                cmd.setStrings(java.util.Collections.singletonList(String.valueOf(modelData)));
+                meta.setCustomModelDataComponent(cmd);
+            }
             itemStack.setItemMeta(meta);
         }
 
