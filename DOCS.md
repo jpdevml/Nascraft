@@ -7,7 +7,7 @@ supply: plentiful goods are cheap, scarce goods are expensive. The intended loop
 is mercantile arbitrage — buy where a good is produced, haul it, sell where it's
 in demand.
 
-- **Build target:** Spigot API 1.21.8, Java 21 (Maven, shaded jar)
+- **Build target:** Spigot API 1.21.11, Java 21 (Maven, shaded jar)
 - **Version:** `2.0.0-ports` (branch `ports-rework`)
 - **Requires:** Vault + an economy plugin
 - **Optional:** Discord (JDA, bundled), DiscordSRV, PlaceholderAPI

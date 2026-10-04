@@ -3,5 +3,5 @@ version: '${project.version}'
 main: me.bounser.nascraft.Nascraft
 api-version: '1.21'
 softdepend: [ Vault, DiscordSRV ]
-authors: [ bounser, jamesperreaultdev ]
+authors: [ bounser, jamesperreaultdev, Error11O ]
 description: Port-based local markets and trading
