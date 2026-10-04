@@ -2,7 +2,7 @@
 
 A heavily reworked fork of [Nascraft](https://www.spigotmc.org/resources/108216/) that turns the
 single global item market into **port-based local markets** with their own
-economies — Mount & Blade style trading for Minecraft 1.21.8.
+economies — Mount & Blade style trading for Minecraft 1.21.11.
 
 ## How it works
 
@@ -49,5 +49,12 @@ alerts, sell wands, CPI/flows charts, custom command currencies, MySQL/Redis.
 mvn package
 ```
 
-Requires JDK 21+. Built against Spigot API 1.21.8; runs on Paper forks
+Requires JDK 21+. Built against Spigot API 1.21.11; runs on Paper forks
 (e.g. UniverseSpigot).
+
+## Maintainers
+
+- [jamesperreaultdev](https://github.com/jamesperreaultdev)
+- [Error11O](https://github.com/Error11O)
+
+Original plugin by [Bounser](https://github.com/Bounser) (MIT).
