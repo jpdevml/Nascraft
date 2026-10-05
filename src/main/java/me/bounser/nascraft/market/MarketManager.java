@@ -17,6 +17,7 @@ public class MarketManager {
     // Replaced wholesale on reload (never mutated in place) so async/JDA
     // readers always see either the old or the new set of ports.
     private volatile Map<String, Port> ports = new LinkedHashMap<>();
+    private volatile Port globalMarket;
 
     private boolean active = true;
 
@@ -54,6 +55,10 @@ public class MarketManager {
 
         for (String portId : config.getPortIds()) {
 
+            if (portId.equalsIgnoreCase("global")) {
+                Nascraft.getInstance().getLogger().warning("'global' is reserved for the global market. Skipping conflicting port.");
+                continue;
+            }
             Port port = config.buildPort(portId);
 
             if (port == null) {
@@ -69,12 +74,19 @@ public class MarketManager {
             newPorts.put(portId, port);
         }
 
-        if (newPorts.isEmpty()) {
-            Nascraft.getInstance().getLogger().severe("No valid ports defined in ports.yml! Define at least one port.");
+        if (newPorts.isEmpty() && config.getGlobalGoods().isEmpty()) {
+            Nascraft.getInstance().getLogger().severe("No markets defined in ports.yml! Define a port or global-market goods.");
             return false;
         }
 
+        Port newGlobal = new Port("global", config.getGlobalDisplayName(), null, 0, 0, 0,
+                config.getGlobalRestockMin(), config.getGlobalRestockMax());
+        newGlobal.setupGoods();
+        for (Item item : newGlobal.getParentItems())
+            if (!item.isPlayerOnly()) DatabaseManager.get().getDatabase().retrieveItem(item);
+
         ports = newPorts;
+        globalMarket = newGlobal;
 
         Nascraft.getInstance().getLogger().info("Loaded " + ports.size() + " ports.");
         return true;
@@ -106,7 +118,14 @@ public class MarketManager {
 
     public Set<String> getPortIds() { return ports.keySet(); }
 
-    public Port getPort(String id) { return ports.get(id); }
+    public Port getPort(String id) { return "global".equalsIgnoreCase(id) ? globalMarket : ports.get(id); }
+
+    public Port getGlobalMarket() { return globalMarket; }
+
+    public Port getMarketAt(Location location) {
+        Port local = getPortAt(location);
+        return local == null ? globalMarket : local;
+    }
 
     public Port getPortAt(Location location) {
         for (Port port : ports.values())

@@ -1,14 +1,14 @@
 # Nascraft — Ports Edition
 
 A heavily reworked fork of [Nascraft](https://www.spigotmc.org/resources/108216/) that turns the
-single global item market into **port-based local markets** with their own
-economies — Mount & Blade style trading for Minecraft 1.21.11.
+single item market into **port-based local markets** plus an optional
+**global bazaar** — Mount & Blade style trading for Minecraft 1.21.11.
 
 ## How it works
 
 - **Ports** are local markets placed on the map (`ports.yml`): a world position
   plus a radius. Players must physically stand inside a port to trade there
-  (`/market`, `/sell`, `/sellhand`, `/sellall`).
+  to trade at that port. Outside all ports, `/market` opens the global bazaar.
 - Every port keeps its **own prices and stock** for the goods it trades.
   Prices are driven by local supply (stock-based exponential pricing): goods a
   port produces are plentiful and cheap; goods it demands are scarce and
@@ -18,8 +18,11 @@ economies — Mount & Blade style trading for Minecraft 1.21.11.
 - The goods catalog lives in `items.yml`; ports pick goods from it and can
   override any economic parameter per port (price, elasticity, stock,
   restock amount, taxes, limits).
-- **Money is handled through Vault.** State persists in SQLite
-  (async + HikariCP connection pooling).
+- The global catalog is selected under `global-market.goods` in `ports.yml`.
+  Goods can be `managed` (existing stock simulation) or `player-only` (escrowed
+  player orders; no generated stock). Vanilla `material` items remain supported.
+- **Money is handled through Vault.** Managed state persists in SQLite
+  (async + HikariCP); player-backed orders and claims are written synchronously.
 - Optional **Discord integration** (JDA): account linking, a trade-log
   channel showing which port each trade happened at, and informational
   `/ports`, `/port`, `/balance` slash commands. Remote trading from Discord is
@@ -29,9 +32,12 @@ economies — Mount & Blade style trading for Minecraft 1.21.11.
 
 | Command | Description |
 |---|---|
-| `/market` (`/port`) | Open the market of the port you're standing in |
-| `/sell` | Deposit-and-sell menu at the current port |
-| `/sellhand`, `/sellall` | Sell held item / all matching items at the current port |
+| `/market` (`/port`) | Open the local port if present, otherwise global |
+| `/market global` | Open global from any location |
+| `/market order <buy\|sell> <good> <qty> <price> [global]` | Place an escrowed player-only order |
+| `/market orders`, `/market cancel <id>`, `/market claim` | Manage orders and claim proceeds/items |
+| `/sell` | Deposit-and-sell menu at the current market (`/sell global` to force global) |
+| `/sellhand`, `/sellall` | Sell held item / all matching items at the current market |
 | `/nascraft reload\|stop\|resume\|restock\|ports\|log` | Admin tools (`nascraft.admin`) |
 | `/link`, `/discord` | Discord account linking |
 
@@ -40,7 +46,7 @@ Permissions: `nascraft.market` (trade), `nascraft.admin` (admin),
 
 ## Removed from upstream
 
-Web UI, AdvancedGUI layouts, portfolios, margin loans, limit orders, price
+Web UI, AdvancedGUI layouts, portfolios, margin loans, price
 alerts, sell wands, CPI/flows charts, custom command currencies, MySQL/Redis.
 
 ## Building

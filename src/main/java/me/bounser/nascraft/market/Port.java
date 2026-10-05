@@ -36,6 +36,7 @@ public class Port {
 
     private final int restockMinMinutes;
     private final int restockMaxMinutes;
+    private final boolean global;
 
     private final List<Item> items = new ArrayList<>();
     private final Map<String, Item> identifiers = new HashMap<>();
@@ -43,6 +44,7 @@ public class Port {
     public Port(String id, String displayName, String worldName, double x, double z, double radius,
                 int restockMinMinutes, int restockMaxMinutes) {
         this.id = id;
+        this.global = "global".equals(id);
         this.displayName = displayName;
         this.plainDisplayName = Formatter.extractPlainText(MiniMessage.miniMessage().deserialize(displayName));
         this.worldName = worldName;
@@ -57,7 +59,7 @@ public class Port {
 
         Config config = Config.getInstance();
 
-        for (String identifier : config.getPortGoods(id)) {
+        for (String identifier : global ? config.getGlobalGoods() : config.getPortGoods(id)) {
 
             if (!config.getAllMaterials().contains(identifier)) {
                 Nascraft.getInstance().getLogger().warning("Port " + id + " references good '" + identifier + "' which is not defined in items.yml. Skipping.");
@@ -66,29 +68,34 @@ public class Port {
 
             ItemStack itemStack = config.getItemStackOfItem(identifier);
 
-            if (itemStack == null) {
+            if (itemStack == null || itemStack.getType().isAir()) {
                 Nascraft.getInstance().getLogger().warning("Error with the itemStack of: " + identifier);
                 continue;
             }
 
-            Item item = new Item(
-                    itemStack,
-                    identifier,
-                    config.getAlias(identifier),
-                    this,
-                    config.getGoodSettings(id, identifier)
-            );
+            GoodSettings settings;
+            try {
+                settings = config.getGoodSettings(id, identifier);
+            } catch (IllegalArgumentException ex) {
+                Nascraft.getInstance().getLogger().severe(ex.getMessage() + "; skipping good to avoid unintended admin stock.");
+                continue;
+            }
+            Item item = new Item(itemStack, identifier, config.getAlias(identifier), this, settings);
 
             items.add(item);
             identifiers.put(identifier, item);
 
-            for (Item child : config.getChilds(item)) {
+            // Conversion variants need a separate escrow/conversion engine; never create
+            // blocks from an ingot order without depositing the corresponding block.
+            for (Item child : item.isPlayerOnly() ? java.util.Collections.<Item>emptyList() : config.getChilds(item)) {
                 item.addChildItem(child);
                 items.add(child);
                 identifiers.put(child.getIdentifier(), child);
             }
         }
     }
+
+    public boolean isGlobal() { return global; }
 
     public String getId() { return id; }
 
@@ -112,6 +119,7 @@ public class Port {
 
     /** Horizontal distance check, Y is ignored: a port covers the full column. */
     public boolean isInside(Location location) {
+        if (global) return true;
         if (location.getWorld() == null || !location.getWorld().getName().equals(worldName)) return false;
         double dx = location.getX() - x;
         double dz = location.getZ() - z;
@@ -125,7 +133,7 @@ public class Port {
     /** Adds each parent good's configured restock amount to its stock. */
     public void restock() {
         for (Item item : getParentItems())
-            item.addStock(item.getRestockAmount());
+            if (!item.isPlayerOnly()) item.addStock(item.getRestockAmount());
     }
 
     public Item getItem(String identifier) { return identifiers.get(identifier); }

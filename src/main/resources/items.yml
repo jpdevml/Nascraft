@@ -10,6 +10,13 @@
 #   child: {<id>: {multiplier, alias}}    (e.g. block forms of an ingot)
 
 items:
+  # Vanilla ItemStacks are still supported by material name (or a serialized
+  # Bukkit item-stack, model-data and display-name for custom items).
+  diamond:
+    material: DIAMOND
+    initial-price: 100
+    alias: 'Diamond'
+
   iron_ingot:
     initial-price: 10
     alias: 'Iron Ingot'

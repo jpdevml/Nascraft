@@ -33,6 +33,7 @@ import java.util.UUID;
 public class SellHandCommand extends Command {
 
     private final Map<UUID, ItemStack> pendingConfirmations = new HashMap<>();
+    private final Map<UUID, String> pendingMarkets = new HashMap<>();
 
     public SellHandCommand() {
         super(
@@ -58,7 +59,9 @@ public class SellHandCommand extends Command {
             return;
         }
 
-        Port port = MarketManager.getInstance().getPortAt(player.getLocation());
+        Port port = args.length > 0 && args[0].equalsIgnoreCase("global")
+                ? MarketManager.getInstance().getGlobalMarket()
+                : MarketManager.getInstance().getMarketAt(player.getLocation());
 
         if (port == null) {
             Lang.get().message(player, Message.NOT_IN_PORT);
@@ -72,11 +75,13 @@ public class SellHandCommand extends Command {
             return;
         }
 
-        if (args.length == 1 && args[0].equalsIgnoreCase("confirm")) {
+        if ((args.length == 1 && args[0].equalsIgnoreCase("confirm"))
+                || (args.length == 2 && args[0].equalsIgnoreCase("global") && args[1].equalsIgnoreCase("confirm"))) {
 
             ItemStack snapshot = pendingConfirmations.remove(player.getUniqueId());
+            String marketId = pendingMarkets.remove(player.getUniqueId());
 
-            if (snapshot == null || !handItem.equals(snapshot)) {
+            if (snapshot == null || !handItem.equals(snapshot) || !port.getId().equals(marketId)) {
                 Lang.get().message(player, Message.SELLHAND_ERROR_HAND);
                 return;
             }
@@ -110,11 +115,13 @@ public class SellHandCommand extends Command {
                                 item.getName()));
 
         component = component.hoverEvent(HoverEvent.showText(hoverText))
-                .clickEvent(ClickEvent.runCommand("/" + Config.getInstance().getCommandAlias("sellhand") + " confirm"));
+                .clickEvent(ClickEvent.runCommand("/" + Config.getInstance().getCommandAlias("sellhand")
+                        + (args.length > 0 && args[0].equalsIgnoreCase("global") ? " global confirm" : " confirm")));
 
         Lang.get().getAudience().player(player).sendMessage(component);
 
         pendingConfirmations.put(player.getUniqueId(), handItem.clone());
+        pendingMarkets.put(player.getUniqueId(), port.getId());
     }
 
     @Override

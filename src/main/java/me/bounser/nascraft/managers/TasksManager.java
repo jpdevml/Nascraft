@@ -59,6 +59,8 @@ public class TasksManager {
         List<Item> items = new ArrayList<>();
         for (Port port : MarketManager.getInstance().getPorts())
             items.addAll(port.getParentItems());
+        if (MarketManager.getInstance().getGlobalMarket() != null)
+            items.addAll(MarketManager.getInstance().getGlobalMarket().getParentItems());
         return items;
     }
 
@@ -67,6 +69,7 @@ public class TasksManager {
         Bukkit.getScheduler().runTaskTimer(Nascraft.getInstance(), () -> {
 
             for (Item item : allParentItems()) {
+                if (item.isPlayerOnly()) continue;
                 item.lowerOperations();
                 item.getPrice().addValueToShortTermStorage();
             }
@@ -94,7 +97,7 @@ public class TasksManager {
             if (!Config.getInstance().getPriceNoise()) return;
 
             for (Item item : allParentItems())
-                item.getPrice().applyNoise();
+                if (!item.isPlayerOnly()) item.getPrice().applyNoise();
 
         }, (long) delay * ticksPerSecond, (long) Config.getInstance().getNoiseTime() * ticksPerSecond);
     }
@@ -111,6 +114,7 @@ public class TasksManager {
         Bukkit.getScheduler().runTaskTimer(Nascraft.getInstance(), () -> {
 
             for (Item item : allParentItems()) {
+                if (item.isPlayerOnly()) continue;
 
                 item.getItemStats().addInstant(new Instant(
                         LocalDateTime.now(),
@@ -132,9 +136,7 @@ public class TasksManager {
 
         Bukkit.getScheduler().runTaskTimer(Nascraft.getInstance(), () -> {
 
-            for (Port port : MarketManager.getInstance().getPorts())
-                for (Item item : port.getAllItems())
-                    item.getPrice().restartHourLimits();
+            for (Item item : allParentItems()) item.getPrice().restartHourLimits();
 
             MarketManager.getInstance().setOperationsLastHour(0);
 
@@ -148,6 +150,9 @@ public class TasksManager {
     public void scheduleRestockTasks() {
         for (Port port : MarketManager.getInstance().getPorts())
             scheduleNextRestock(port);
+        Port global = MarketManager.getInstance().getGlobalMarket();
+        if (global != null && global.getParentItems().stream().anyMatch(item -> !item.isPlayerOnly()))
+            scheduleNextRestock(global);
     }
 
     public void cancelRestockTasks() {

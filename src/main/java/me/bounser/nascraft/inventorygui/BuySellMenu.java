@@ -83,7 +83,8 @@ public final class BuySellMenu {
 
             List<String> lore = manager.legacyLines(Lang.get().message(Message.GUI_BUYSELL_BUY_BUTTONS_LORE)
                     .replace("[AMOUNT]", String.valueOf(amount))
-                    .replace("[WORTH]", Formatter.format(item.getCurrency(), item.buyPrice(amount), Style.ROUND_BASIC)));
+                    .replace("[WORTH]", item.isPlayerOnly() && item.buyPrice(amount) == 0
+                            ? "No matching sell orders" : Formatter.format(item.getCurrency(), item.buyPrice(amount), Style.ROUND_BASIC)));
 
             ItemStack button = manager.generateItemStack(config.getBuySellBuyMaterial(), name, lore);
 
@@ -107,13 +108,28 @@ public final class BuySellMenu {
 
             List<String> lore = manager.legacyLines(Lang.get().message(Message.GUI_BUYSELL_SELL_BUTTONS_LORE)
                     .replace("[AMOUNT]", String.valueOf(amount))
-                    .replace("[WORTH]", Formatter.format(item.getCurrency(), item.sellPrice(amount), Style.ROUND_BASIC)));
+                    .replace("[WORTH]", item.isPlayerOnly() && item.sellPrice(amount) == 0
+                            ? "No matching buy orders" : Formatter.format(item.getCurrency(), item.sellPrice(amount), Style.ROUND_BASIC)));
 
             ItemStack button = manager.generateItemStack(config.getBuySellSellMaterial(), name, lore);
 
             button.setAmount(Math.max(1, Math.min(64, amount)));
 
             gui.setItem(slot, button);
+        }
+
+        // Order entry is a command suggestion so the player can edit both quantity
+        // and limit price instead of being locked to a guessed GUI price.
+        if (item.isPlayerOnly()) {
+            int buySlot = config.getBuyOrderSlot(), sellSlot = config.getSellOrderSlot();
+            if (buySlot >= 0 && buySlot < gui.getSize())
+                gui.setItem(buySlot, manager.generateItemStack(org.bukkit.Material.EMERALD,
+                        manager.legacy("<green>Create buy order</green>"),
+                        manager.legacyLines("<gray>Click for an editable order command.</gray>")));
+            if (sellSlot >= 0 && sellSlot < gui.getSize())
+                gui.setItem(sellSlot, manager.generateItemStack(org.bukkit.Material.CHEST,
+                        manager.legacy("<red>Create sell order</red>"),
+                        manager.legacyLines("<gray>Click for an editable order command.</gray>")));
         }
 
         // Variants (parent + childs of the family, excluding the item on display)
@@ -140,6 +156,10 @@ public final class BuySellMenu {
         if (config.getBuySellBackEnabled()) reserved.add(config.getBuySellBackSlot());
         reserved.addAll(config.getBuySellBuySlots().values());
         reserved.addAll(config.getBuySellSellSlots().values());
+        if (item.isPlayerOnly()) {
+            reserved.add(config.getBuyOrderSlot());
+            reserved.add(config.getSellOrderSlot());
+        }
 
         int cursor = config.getBuySellMenuItemSlot() + 1;
 

@@ -114,6 +114,23 @@ public class SQLite implements Database {
                             "buy INTEGER, " +
                             "discord INTEGER");
 
+            // Durable, player-backed order book. Never use port_items as an inventory ledger.
+            createTable(connection, "bazaar_orders",
+                    "id INTEGER PRIMARY KEY AUTOINCREMENT, market_id TEXT NOT NULL, identifier TEXT NOT NULL, " +
+                            "owner TEXT NOT NULL, side TEXT NOT NULL, price_cents INTEGER NOT NULL, " +
+                            "remaining INTEGER NOT NULL CHECK(remaining >= 0), item_data TEXT NOT NULL");
+            createTable(connection, "bazaar_claims",
+                    "id INTEGER PRIMARY KEY AUTOINCREMENT, owner TEXT NOT NULL, kind TEXT NOT NULL, " +
+                            "amount INTEGER NOT NULL CHECK(amount > 0), item_data TEXT, status TEXT NOT NULL DEFAULT 'READY'");
+            createTable(connection, "bazaar_fills",
+                    "id INTEGER PRIMARY KEY AUTOINCREMENT, order_id INTEGER NOT NULL, taker TEXT NOT NULL, " +
+                            "quantity INTEGER NOT NULL, price_cents INTEGER NOT NULL");
+            try (Statement index = connection.createStatement()) {
+                index.execute("CREATE INDEX IF NOT EXISTS bazaar_match ON bazaar_orders(market_id, identifier, side, price_cents, id)");
+                index.execute("CREATE INDEX IF NOT EXISTS bazaar_owner ON bazaar_orders(owner, remaining)");
+                index.execute("CREATE INDEX IF NOT EXISTS bazaar_claim_owner ON bazaar_claims(owner, status)");
+            }
+
             createTable(connection, "discord_links",
                     "userid VARCHAR(20) PRIMARY KEY, " +
                             "uuid VARCHAR(36), " +
@@ -147,7 +164,10 @@ public class SQLite implements Database {
         // and rebuilt (reload) before the DB thread runs this task.
         List<Item> snapshot = new java.util.ArrayList<>();
         for (Port port : marketManager.getPorts())
-            snapshot.addAll(port.getParentItems());
+            for (Item item : port.getParentItems()) if (!item.isPlayerOnly()) snapshot.add(item);
+        if (marketManager.getGlobalMarket() != null)
+            for (Item item : marketManager.getGlobalMarket().getParentItems())
+                if (!item.isPlayerOnly()) snapshot.add(item);
 
         DatabaseExecutor.getInstance().executeWithRetry(connection -> {
             try {

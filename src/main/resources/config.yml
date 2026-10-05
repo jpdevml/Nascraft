@@ -1,9 +1,8 @@
 # Nascraft (Ports edition) config.yml - ${project.version}
 #
-# Trading happens at PORTS: local markets placed on the map (defined in ports.yml).
-# Each port has its own goods, prices, stock and restock schedule, so hauling
-# goods between ports is profitable. Players must be inside a port's radius
-# to trade there.
+# Trading happens at local PORTS or the GLOBAL market (defined in ports.yml).
+# Each market selects goods from items.yml. Managed goods use stock-based prices;
+# player-only goods use escrowed player orders and never receive admin stock.
 
 # Language file to use. Available: en_US es_ES it_IT de_DE pt_BR ru_RU zh_CN
 language: 'en_US'

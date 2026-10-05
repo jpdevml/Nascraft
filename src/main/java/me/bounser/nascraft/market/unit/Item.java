@@ -19,6 +19,7 @@ import me.bounser.nascraft.market.GoodSettings;
 import me.bounser.nascraft.market.MarketManager;
 import me.bounser.nascraft.managers.MoneyManager;
 import me.bounser.nascraft.market.Port;
+import me.bounser.nascraft.market.OrderBook;
 import me.bounser.nascraft.config.Config;
 import me.bounser.nascraft.formatter.Style;
 import me.bounser.nascraft.market.unit.stats.ItemStats;
@@ -56,6 +57,7 @@ public class Item {
 
     private int stock;
     private final int restockAmount;
+    private final boolean playerOnly;
 
     private ItemStats itemStats;
 
@@ -91,6 +93,7 @@ public class Item {
 
         this.stock = settings.getStartingStock();
         this.restockAmount = settings.getRestockAmount();
+        this.playerOnly = settings.isPlayerOnly();
 
         itemStats = new ItemStats(this);
     }
@@ -109,6 +112,7 @@ public class Item {
         this.price = parent.getPrice();
         this.restricted = parent.isPriceRestricted();
         this.restockAmount = 0;
+        this.playerOnly = parent.isPlayerOnly();
 
         setupAlias(alias);
     }
@@ -161,16 +165,32 @@ public class Item {
     public String getFormattedName() { return formattedAlias; }
 
     public double buyPrice(int amount) {
+        if (playerOnly) return OrderBook.get().quote(this, amount, true);
         return price.getProjectedCost(-amount*multiplier, price.getBuyTaxMultiplier());
     }
 
     public double sellPrice(int amount) {
+        if (playerOnly) return OrderBook.get().quote(this, amount, false);
         return price.getProjectedCost(amount*multiplier, price.getSellTaxMultiplier());
     }
 
     public double buy(int amount, UUID uuid, boolean feedback) {
-
+        if (amount <= 0) return 0;
+        if (playerOnly) {
+            Player buyer = Bukkit.getPlayer(uuid);
+            if (buyer == null || !buyer.isOnline()) return 0;
+            BuyItemEvent event = new BuyItemEvent(buyer, this, amount);
+            Bukkit.getPluginManager().callEvent(event);
+            if (event.isCancelled()) return 0;
+            double result = OrderBook.get().fill(buyer, this, amount, true, false);
+            if (result > 0) completedPlayerTrade(buyer, amount, result, true);
+            if (feedback && result > 0) buyer.sendMessage("Purchased " + amount + " " + getName() + " for " + result + ". Use /market claim to collect.");
+            else if (feedback && result == -2) buyer.sendMessage("Settlement uncertain. Contact an administrator; do not retry until reconciled.");
+            else if (feedback) buyer.sendMessage("No matching sell orders or payment failed.");
+            return Math.max(0, result);
+        }
         Player player = Bukkit.getPlayer(uuid);
+        if (player == null || !feedback) return 0;
         OfflinePlayer offlinePlayer = Bukkit.getOfflinePlayer(uuid);
 
         boolean limitReached = !price.canStockChange(amount, true);
@@ -224,21 +244,26 @@ public class Item {
 
         stockItem.addStock(-stockNeeded);
 
-        Trade trade = new Trade(this, LocalDateTime.now(), worth, amount, true, false, uuid);
-
-        DatabaseManager.get().getDatabase().saveTrade(trade);
-
-        me.bounser.nascraft.managers.TradeLogger.getInstance().log(trade);
-
-        if (Config.getInstance().getDiscordEnabled() && Config.getInstance().getLogChannelEnabled())
-            DiscordLog.getInstance().sendTradeLog(trade);
-
-        MarketManager.getInstance().addOperation();
-
-        TransactionCompletedEvent transactionEvent = new TransactionCompletedEvent(player, this, amount, Action.BUY, worth);
-        Bukkit.getPluginManager().callEvent(transactionEvent);
+        completedPlayerTrade(player, amount, worth, true);
 
         return worth;
+    }
+
+    private void completedPlayerTrade(Player player, int amount, double worth, boolean buy) {
+        // The fill is already committed: logging and third-party listeners must not
+        // cause the caller to return escrow to a seller on an exception.
+        try {
+            Trade trade = new Trade(this, LocalDateTime.now(), worth, amount, buy, false, player.getUniqueId());
+            DatabaseManager.get().getDatabase().saveTrade(trade);
+            me.bounser.nascraft.managers.TradeLogger.getInstance().log(trade);
+            if (Config.getInstance().getDiscordEnabled() && Config.getInstance().getLogChannelEnabled())
+                DiscordLog.getInstance().sendTradeLog(trade);
+            MarketManager.getInstance().addOperation();
+            Bukkit.getPluginManager().callEvent(new TransactionCompletedEvent(player, this, amount,
+                    buy ? Action.BUY : Action.SELL, worth));
+        } catch (Exception ex) {
+            Nascraft.getInstance().getLogger().warning("Trade notification failed after committed bazaar fill: " + ex);
+        }
     }
 
     public boolean checkBalance(OfflinePlayer offlinePlayer, Player player, boolean feedback, double money) {
@@ -250,8 +275,32 @@ public class Item {
     }
 
     public double sell(int amount, UUID uuid, boolean feedback) {
+        return sellInternal(amount, uuid, feedback, false);
+    }
 
+    /** Only the deposit GUI should call this, after taking ownership of a tracked ORIGINAL stack. */
+    public double sellEscrowed(ItemStack original, UUID uuid) {
+        if (original == null || !original.isSimilar(itemStack) || original.getAmount() <= 0) return -1;
+        return sellInternal(original.getAmount(), uuid, false, true);
+    }
+
+    private double sellInternal(int amount, UUID uuid, boolean feedback, boolean escrowed) {
+        if (amount <= 0) return -1;
+        if (playerOnly) {
+            Player seller = Bukkit.getPlayer(uuid);
+            if (seller == null || !seller.isOnline()) return -1;
+            SellItemEvent event = new SellItemEvent(seller, this, amount);
+            Bukkit.getPluginManager().callEvent(event);
+            if (event.isCancelled()) return -1;
+            double result = OrderBook.get().fill(seller, this, amount, false, escrowed);
+            if (result > 0) completedPlayerTrade(seller, amount, result, false);
+            if (feedback && result > 0) seller.sendMessage("Sold " + amount + " " + getName() + " for " + result + ". Use /market claim to collect.");
+            else if (feedback && result == -2) seller.sendMessage("Settlement uncertain. Contact an administrator; do not retry until reconciled.");
+            else if (feedback) seller.sendMessage("No matching buy orders or escrow failed.");
+            return result;
+        }
         Player player = Bukkit.getPlayer(uuid);
+        if (player == null) return -1;
         OfflinePlayer offlinePlayer = Bukkit.getOfflinePlayer(uuid);
 
         boolean limitReached = !price.canStockChange(amount, false);
@@ -275,16 +324,30 @@ public class Item {
 
         operationItemStack.setAmount(1);
 
-        if (player != null && feedback && !player.getInventory().containsAtLeast(operationItemStack, amount)) {
+        if (!escrowed && !player.getInventory().containsAtLeast(operationItemStack, amount)) {
             Lang.get().message(player, Message.NOT_ENOUGH_ITEMS);
             return -1;
         }
 
         double worth = price.getProjectedCost(amount*multiplier, price.getSellTaxMultiplier());
 
-        if (player != null && feedback) {
+        if (!escrowed) {
             operationItemStack.setAmount(amount);
-            player.getInventory().removeItem(operationItemStack);
+            Map<Integer, ItemStack> remaining = player.getInventory().removeItem(operationItemStack);
+            if (!remaining.isEmpty()) {
+                int notRemoved = remaining.values().stream().mapToInt(ItemStack::getAmount).sum();
+                if (notRemoved < amount) InventoryManager.addItemsToInventory(player, operationItemStack, amount - notRemoved);
+                return -1;
+            }
+        }
+
+        if (!MoneyManager.getInstance().deposit(offlinePlayer, currency, worth)) {
+            // Vault's failure response cannot prove that nothing was paid. Returning
+            // the inventory here could duplicate items AND money; quarantine instead.
+            Nascraft.getInstance().getLogger().severe("Managed sale payout uncertain for " + uuid + ": "
+                    + amount + "x " + identifier + " at " + port.getId() + ". Reconcile before refunding.");
+            if (feedback) player.sendMessage("Payout uncertain; contact an administrator before retrying.");
+            return -2;
         }
 
         Item stockItem = parent != null ? parent : this;
@@ -298,24 +361,11 @@ public class Item {
 
         stockItem.addStock((int) (amount * multiplier));
 
-        MoneyManager.getInstance().deposit(offlinePlayer, currency, worth);
-
         worth = RoundUtils.round(worth);
 
         if (player != null && feedback) Lang.get().message(player, Message.SELL_MESSAGE, Formatter.format(currency, worth, Style.ROUND_BASIC), String.valueOf(amount), taggedAlias);
 
-        Trade trade = new Trade(this, LocalDateTime.now(), worth, amount, false, false, uuid);
-
-        DatabaseManager.get().getDatabase().saveTrade(trade);
-
-        me.bounser.nascraft.managers.TradeLogger.getInstance().log(trade);
-
-        if (Config.getInstance().getDiscordEnabled() && Config.getInstance().getLogChannelEnabled())
-            DiscordLog.getInstance().sendTradeLog(trade);
-        MarketManager.getInstance().addOperation();
-
-        TransactionCompletedEvent transactionEvent = new TransactionCompletedEvent(player, this, amount, Action.SELL, worth);
-        Bukkit.getPluginManager().callEvent(transactionEvent);
+        completedPlayerTrade(player, amount, worth, false);
 
         return worth;
     }
@@ -387,17 +437,21 @@ public class Item {
 
     public boolean isPriceRestricted() { return restricted; }
 
-    public int getStock() { return parent != null ? parent.getStock() : stock; }
+    public boolean isPlayerOnly() { return playerOnly; }
+
+    public int getStock() { return parent != null ? parent.getStock() : playerOnly ? (int) Math.min(Integer.MAX_VALUE, OrderBook.get().available(this, true)) : stock; }
 
     public int getRestockAmount() { return restockAmount; }
 
     public void setStock(int stock) {
         if (parent != null) { parent.setStock(stock); return; }
+        if (playerOnly) return;
         this.stock = Math.max(0, stock);
     }
 
     public void addStock(int amount) {
         if (parent != null) { parent.addStock(amount); return; }
+        if (playerOnly) return;
         this.stock = Math.max(0, stock + amount);
     }
 

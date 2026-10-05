@@ -212,6 +212,19 @@ public class Config {
 
     // Ports:
 
+    /** Only configured goods are tradable globally; items.yml remains the item definition catalog. */
+    public Set<String> getGlobalGoods() {
+        ConfigurationSection section = ports.getConfigurationSection("global-market.goods");
+        return section == null ? Collections.emptySet() : section.getKeys(false);
+    }
+
+    public int getGlobalRestockMin() { return ports.getInt("global-market.restock.min-minutes", 45); }
+    public int getGlobalRestockMax() { return ports.getInt("global-market.restock.max-minutes", 90); }
+
+    public String getGlobalDisplayName() {
+        return ports.getString("global-market.display-name", "Global Bazaar");
+    }
+
     public Set<String> getPortIds() {
         ConfigurationSection section = ports.getConfigurationSection("ports");
         if (section == null) return Collections.emptySet();
@@ -274,7 +287,7 @@ public class Config {
      */
     public GoodSettings getGoodSettings(String portId, String identifier) {
 
-        String override = "ports." + portId + ".goods." + identifier;
+        String override = (portId.equals("global") ? "global-market.goods." : "ports." + portId + ".goods.") + identifier;
         String item = "items." + identifier;
 
         float initialPrice = (float) resolveDouble(override + ".initial-price", item + ".initial-price", 1);
@@ -302,11 +315,23 @@ public class Config {
                 config.getInt("market-control.default-starting-stock", 100));
 
         int restockAmount = (int) resolveDouble(override + ".restock-amount", item + ".stock.restock-amount",
-                ports.getDouble("ports." + portId + ".restock.amount",
-                        ports.getDouble("defaults.restock.amount", 64)));
+                portId.equals("global") ? ports.getDouble("global-market.restock.amount", 64) :
+                        ports.getDouble("ports." + portId + ".restock.amount",
+                                ports.getDouble("defaults.restock.amount", 64)));
+
+        String liquidity = ports.getString(override + ".liquidity",
+                items.getString(item + ".liquidity", "managed")).trim().toLowerCase(java.util.Locale.ROOT);
+        if (!liquidity.equals("managed") && !liquidity.equals("player-only"))
+            throw new IllegalArgumentException("Unknown liquidity mode for " + portId + "/" + identifier + ": " + liquidity);
+        boolean playerOnly = liquidity.equals("player-only");
+        if (playerOnly) {
+            startingStock = 0;
+            restockAmount = 0;
+            noiseIntensity = 0;
+        }
 
         return new GoodSettings(initialPrice, elasticity, support, resistance, noiseIntensity,
-                taxBuy, taxSell, lowLimit, highLimit, restricted, startingStock, restockAmount);
+                taxBuy, taxSell, lowLimit, highLimit, restricted, startingStock, restockAmount, playerOnly);
     }
 
     private double resolveDouble(String portPath, String itemPath, double fallback) {
@@ -555,6 +580,9 @@ public class Config {
     }
 
     // GUI: buy-sell menu
+
+    public int getBuyOrderSlot() { return inventorygui.getInt("buy-sell.player-orders.buy-slot", 39); }
+    public int getSellOrderSlot() { return inventorygui.getInt("buy-sell.player-orders.sell-slot", 41); }
 
     public int getBuySellMenuSize() {
         return inventorygui.getInt("buy-sell.size", 45);

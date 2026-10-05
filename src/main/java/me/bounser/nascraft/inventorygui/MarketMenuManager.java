@@ -8,6 +8,7 @@ import me.bounser.nascraft.formatter.Formatter;
 import me.bounser.nascraft.formatter.RoundUtils;
 import me.bounser.nascraft.formatter.Style;
 import me.bounser.nascraft.market.Port;
+import me.bounser.nascraft.market.OrderBook;
 import me.bounser.nascraft.market.unit.Item;
 import net.kyori.adventure.platform.bukkit.BukkitComponentSerializer;
 import net.kyori.adventure.text.minimessage.MiniMessage;
@@ -234,13 +235,13 @@ public class MarketMenuManager {
 
         double valueAnHourAgo = item.getPrice().getValueAnHourAgo();
 
-        float change = valueAnHourAgo == 0 ? 0 :
+        float change = item.isPlayerOnly() || valueAnHourAgo == 0 ? 0 :
                 RoundUtils.roundToOne((float) (-100 + item.getPrice().getValue() * 100 / valueAnHourAgo));
 
         String itemLore = lore
-                .replace("[PRICE]", Formatter.format(item.getCurrency(), item.getPrice().getValue(), Style.ROUND_BASIC))
-                .replace("[SELL-PRICE]", Formatter.format(item.getCurrency(), item.getPrice().getSellPrice(), Style.ROUND_BASIC))
-                .replace("[BUY-PRICE]", Formatter.format(item.getCurrency(), item.getPrice().getBuyPrice(), Style.ROUND_BASIC));
+                .replace("[PRICE]", Formatter.format(item.getCurrency(), item.isPlayerOnly() ? item.buyPrice(1) : item.getPrice().getValue(), Style.ROUND_BASIC))
+                .replace("[SELL-PRICE]", Formatter.format(item.getCurrency(), item.sellPrice(1), Style.ROUND_BASIC))
+                .replace("[BUY-PRICE]", Formatter.format(item.getCurrency(), item.buyPrice(1), Style.ROUND_BASIC));
 
         String changeFormatted;
 
@@ -253,9 +254,16 @@ public class MarketMenuManager {
                 .replace("[PERCENTAGE]", String.valueOf(change));
 
         List<String> itemLoreLines = new ArrayList<>(legacyLines(itemLore));
+        if (item.isPlayerOnly()) {
+            itemLoreLines.add(legacy("<yellow>Player orders only — no admin stock</yellow>"));
+            itemLoreLines.add(legacy("<gray>Buy/sell buttons require a matching order.</gray>"));
+            itemLoreLines.add(legacy("<gray>/market order buy|sell <good> <amount> <price></gray>"));
+            itemLoreLines.add(legacy("<gray>/market claim to collect trades.</gray>"));
+        }
 
         itemLoreLines.add(legacy(Lang.get().message(Message.GUI_STOCK_DISPLAY)
                 .replace("[STOCK]", String.valueOf(item.getStock()))));
+        if (item.isPlayerOnly()) itemLoreLines.add(legacy("<gray>Buy-order volume: " + OrderBook.get().available(item, false) + "</gray>"));
 
         return itemLoreLines;
     }

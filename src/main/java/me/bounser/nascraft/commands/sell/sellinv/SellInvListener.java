@@ -173,7 +173,7 @@ public class SellInvListener implements Listener {
     /** Refuses deposits that would push a restricted good past its price floor. */
     private boolean canDeposit(Player player, Port port, Map<Integer, ItemStack> playerDeposits, Item item, int amount) {
 
-        if (!item.isPriceRestricted()) return true;
+        if (item.isPlayerOnly() || !item.isPriceRestricted()) return true;
 
         int alreadyDeposited = 0;
 
@@ -250,11 +250,12 @@ public class SellInvListener implements Listener {
                 continue;
             }
 
-            // feedback=false: the GUI holds the items, Item#sell must not touch the inventory.
-            double worth = item.sell(stack.getAmount(), player.getUniqueId(), false);
+            // Tracked original was removed from the GUI registry before this call.
+            double worth = item.sellEscrowed(stack, player.getUniqueId());
 
             if (worth < 0) {
-                InventoryManager.addItemsToInventory(player, stack, stack.getAmount());
+                if (worth != -2) InventoryManager.addItemsToInventory(player, stack, stack.getAmount());
+                else Nascraft.getInstance().getLogger().severe("Bazaar settlement uncertain for " + player.getUniqueId() + "; withheld escrow for reconciliation");
                 continue;
             }
 

@@ -21,6 +21,7 @@ public class GoodSettings {
 
     private final int startingStock;
     private final int restockAmount;
+    private final boolean playerOnly;
 
     public GoodSettings(float initialPrice,
                         float elasticity,
@@ -33,7 +34,8 @@ public class GoodSettings {
                         double highLimit,
                         boolean restricted,
                         int startingStock,
-                        int restockAmount) {
+                        int restockAmount,
+                        boolean playerOnly) {
         this.initialPrice = initialPrice;
         this.elasticity = elasticity;
         this.support = support;
@@ -46,6 +48,7 @@ public class GoodSettings {
         this.restricted = restricted;
         this.startingStock = startingStock;
         this.restockAmount = restockAmount;
+        this.playerOnly = playerOnly;
     }
 
     public float getInitialPrice() { return initialPrice; }
@@ -66,4 +69,5 @@ public class GoodSettings {
 
     public int getStartingStock() { return startingStock; }
     public int getRestockAmount() { return restockAmount; }
+    public boolean isPlayerOnly() { return playerOnly; }
 }

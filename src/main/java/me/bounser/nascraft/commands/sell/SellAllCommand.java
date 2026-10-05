@@ -26,6 +26,8 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import java.util.HashMap;
 
 /**
  * Sells every stack in the player's inventory that the port at their
@@ -33,6 +35,8 @@ import java.util.Map;
  * not apply: outside a port the command always fails.
  */
 public class SellAllCommand extends Command {
+
+    private final Map<UUID, String> pendingMarkets = new HashMap<>();
 
     public SellAllCommand() {
         super(
@@ -63,7 +67,9 @@ public class SellAllCommand extends Command {
             return;
         }
 
-        Port port = MarketManager.getInstance().getPortAt(player.getLocation());
+        Port port = MarketManager.getInstance().getMarketAt(player.getLocation());
+        if (args.length > 0 && args[0].equalsIgnoreCase("global"))
+            port = MarketManager.getInstance().getGlobalMarket();
 
         if (port == null) {
             Lang.get().message(player, Message.NOT_IN_PORT);
@@ -92,10 +98,16 @@ public class SellAllCommand extends Command {
             return;
         }
 
-        if (args.length == 1 && args[0].equalsIgnoreCase("confirm")) {
+        if ((args.length == 1 && args[0].equalsIgnoreCase("confirm"))
+                || (args.length == 2 && args[0].equalsIgnoreCase("global") && args[1].equalsIgnoreCase("confirm"))) {
+            if (!port.getId().equals(pendingMarkets.remove(player.getUniqueId()))) {
+                player.sendMessage("Market changed since your estimate. Preview the sale again.");
+                return;
+            }
             sellEverything(player, items, amounts);
         } else {
-            sendEstimate(player, items, amounts);
+            pendingMarkets.put(player.getUniqueId(), port.getId());
+            sendEstimate(player, items, amounts, port.isGlobal() && args.length > 0 && args[0].equalsIgnoreCase("global"));
         }
     }
 
@@ -124,7 +136,7 @@ public class SellAllCommand extends Command {
                 "");
     }
 
-    private void sendEstimate(Player player, Map<String, Item> items, Map<String, Integer> amounts) {
+    private void sendEstimate(Player player, Map<String, Item> items, Map<String, Integer> amounts, boolean explicitGlobal) {
 
         double total = 0;
         StringBuilder segments = new StringBuilder();
@@ -153,7 +165,7 @@ public class SellAllCommand extends Command {
         Component hoverText = MiniMessage.miniMessage().deserialize(estimate);
 
         component = component.hoverEvent(HoverEvent.showText(hoverText))
-                .clickEvent(ClickEvent.runCommand("/" + Config.getInstance().getCommandAlias("sellall") + " confirm"));
+                .clickEvent(ClickEvent.runCommand("/" + Config.getInstance().getCommandAlias("sellall") + (explicitGlobal ? " global confirm" : " confirm")));
 
         Lang.get().getAudience().player(player).sendMessage(component);
     }

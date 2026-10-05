@@ -2,7 +2,6 @@ package me.bounser.nascraft.managers;
 
 import me.bounser.nascraft.config.lang.Lang;
 import me.bounser.nascraft.config.lang.Message;
-import me.bounser.nascraft.market.MarketManager;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
@@ -21,7 +20,7 @@ public class InventoryManager {
         for (ItemStack content : player.getInventory().getStorageContents()) {
             if (content == null || content.getType().equals(Material.AIR)) {
                 space += maxStackSize;
-            } else if (MarketManager.getInstance().isSimilarEnough(content, itemStack)) {
+            } else if (content.isSimilar(itemStack)) {
                 space += Math.max(0, maxStackSize - content.getAmount());
             }
         }

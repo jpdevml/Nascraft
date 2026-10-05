@@ -66,7 +66,7 @@ public class SellInvCommand extends Command {
                 return;
             }
 
-            port = MarketManager.getInstance().getPortAt(player.getLocation());
+            port = MarketManager.getInstance().getMarketAt(player.getLocation());
 
             if (port == null) {
                 Nascraft.getInstance().getLogger().info("Player " + player.getName() + " is not inside a port.");
@@ -87,7 +87,7 @@ public class SellInvCommand extends Command {
                 return;
             }
 
-            if (args.length >= 1 && player.hasPermission("nascraft.ports.bypass")) {
+            if (args.length >= 1 && (args[0].equalsIgnoreCase("global") || player.hasPermission("nascraft.ports.bypass"))) {
 
                 port = MarketManager.getInstance().getPort(args[0]);
 
@@ -98,7 +98,7 @@ public class SellInvCommand extends Command {
 
             } else {
 
-                port = MarketManager.getInstance().getPortAt(player.getLocation());
+                port = MarketManager.getInstance().getMarketAt(player.getLocation());
 
                 if (port == null) {
                     Lang.get().message(player, Message.NOT_IN_PORT);

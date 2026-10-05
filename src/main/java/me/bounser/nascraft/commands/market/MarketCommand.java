@@ -8,6 +8,8 @@ import me.bounser.nascraft.config.lang.Message;
 import me.bounser.nascraft.inventorygui.MarketMenuManager;
 import me.bounser.nascraft.market.MarketManager;
 import me.bounser.nascraft.market.Port;
+import me.bounser.nascraft.market.OrderBook;
+import me.bounser.nascraft.market.unit.Item;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.util.StringUtil;
@@ -26,7 +28,7 @@ public class MarketCommand extends Command {
         super(
                 "market",
                 new String[]{Config.getInstance().getCommandAlias("market")},
-                "Open the local port market",
+                "Open the local port or global bazaar",
                 "nascraft.market"
         );
     }
@@ -43,6 +45,55 @@ public class MarketCommand extends Command {
 
         if (Config.getInstance().getMarketPermissionRequirement() && !player.hasPermission("nascraft.market")) {
             Lang.get().message(player, Message.NO_PERMISSION);
+            return;
+        }
+
+        if (args.length > 0 && args[0].equalsIgnoreCase("claim")) {
+            player.sendMessage("Claims collected: " + OrderBook.get().collect(player));
+            return;
+        }
+        if (args.length > 0 && args[0].equalsIgnoreCase("orders")) {
+            List<String> orders = OrderBook.get().orders(player);
+            player.sendMessage(orders.isEmpty() ? "No open orders." : String.join("\n", orders));
+            return;
+        }
+        if (args.length == 2 && args[0].equalsIgnoreCase("cancel")) {
+            try { player.sendMessage(OrderBook.get().cancel(player, Long.parseLong(args[1])) ? "Order cancelled. /market claim to collect escrow." : "Order not found."); }
+            catch (NumberFormatException ex) { player.sendMessage("Invalid order ID."); }
+            return;
+        }
+        if (args.length > 0 && args[0].equalsIgnoreCase("order")) {
+            if (args.length != 5 && args.length != 6) {
+                player.sendMessage("Usage: /market order <buy|sell> <good> <amount> <price> [global]");
+                return;
+            }
+            if (args.length == 6 && !args[5].equalsIgnoreCase("global")) {
+                player.sendMessage("Only 'global' is accepted as a market selector.");
+                return;
+            }
+            boolean buy = args[1].equalsIgnoreCase("buy");
+            if (!buy && !args[1].equalsIgnoreCase("sell")) { player.sendMessage("Choose buy or sell."); return; }
+            Port target = args.length == 6 && args[5].equalsIgnoreCase("global")
+                    ? MarketManager.getInstance().getGlobalMarket() : MarketManager.getInstance().getMarketAt(player.getLocation());
+            Item item = target == null ? null : target.getItem(args[2]);
+            if (item == null || !item.isPlayerOnly() || !item.isParent()) {
+                player.sendMessage("This market does not list that player-backed good.");
+                return;
+            }
+            try {
+                int amount = Integer.parseInt(args[3]);
+                long price = OrderBook.cents(args[4]);
+                long id = OrderBook.get().place(player, item, amount, price, buy);
+                player.sendMessage(id > 0 ? "Order #" + id + " placed. /market orders to view."
+                        : id == -2 ? "Escrow outcome uncertain. Contact an administrator; do not retry until reconciled."
+                        : "Order rejected: check escrow, price, or existing crossing orders.");
+            } catch (IllegalArgumentException | ArithmeticException ex) { player.sendMessage("Invalid amount or price."); }
+            return;
+        }
+
+        // /market global is always available, including while standing in a port.
+        if (args.length >= 1 && args[0].equalsIgnoreCase("global")) {
+            MarketMenuManager.getInstance().openPortMenu(player, MarketManager.getInstance().getGlobalMarket());
             return;
         }
 
@@ -70,13 +121,7 @@ public class MarketCommand extends Command {
 
         } else {
 
-            port = MarketManager.getInstance().getPortAt(player.getLocation());
-
-            // Not standing in a port: show the directory so they can find one and see its hours.
-            if (port == null) {
-                MarketMenuManager.getInstance().openDirectory(player);
-                return;
-            }
+            port = MarketManager.getInstance().getMarketAt(player.getLocation());
         }
 
         MarketMenuManager.getInstance().openPortMenu(player, port);
@@ -88,11 +133,27 @@ public class MarketCommand extends Command {
         if (args.length == 1) {
             List<String> options = new ArrayList<>();
             options.add("list");
+            options.add("global");
+            options.add("orders");
+            options.add("order");
+            options.add("cancel");
+            options.add("claim");
             if (sender.hasPermission("nascraft.ports.bypass"))
                 options.addAll(MarketManager.getInstance().getPortIds());
             return StringUtil.copyPartialMatches(args[0], options, new ArrayList<>());
         }
 
+        if (args.length == 2 && args[0].equalsIgnoreCase("order"))
+            return StringUtil.copyPartialMatches(args[1], List.of("buy", "sell"), new ArrayList<>());
+        if (args.length == 3 && args[0].equalsIgnoreCase("order") && sender instanceof Player player) {
+            Port market = MarketManager.getInstance().getMarketAt(player.getLocation());
+            List<String> goods = new ArrayList<>();
+            if (market != null) for (Item item : market.getParentItems())
+                if (item.isPlayerOnly()) goods.add(item.getIdentifier());
+            return StringUtil.copyPartialMatches(args[2], goods, new ArrayList<>());
+        }
+        if (args.length == 6 && args[0].equalsIgnoreCase("order"))
+            return StringUtil.copyPartialMatches(args[5], List.of("global"), new ArrayList<>());
         return Collections.emptyList();
     }
 }

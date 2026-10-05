@@ -27,8 +27,7 @@ port-menu:
     black_stained_glass_pane: [0, 1, 2, 3, 5, 6, 7, 8, 9, 17, 18, 26, 27, 35, 36, 44, 46, 47, 48, 49, 50, 51, 52]
 
 # Ports directory: a read-only overview of every port and the goods it trades.
-# Opened with /market list (and by /market when the player is not standing inside
-# a port).
+# Opened with /market list; /market outside all ports opens the global market.
 directory-menu:
   size: 54
   ports:
@@ -66,6 +65,10 @@ buy-sell:
         slot: 20
       64:
         slot: 21
+  # For player-only goods these buttons suggest editable buy/sell order commands.
+  player-orders:
+    buy-slot: 39
+    sell-slot: 41
   sell-buttons:
     material: 'red_stained_glass_pane'
     buttons:

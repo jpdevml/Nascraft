@@ -10,13 +10,14 @@
 # Per-good overrides (all optional, fall back to items.yml then config.yml):
 #   initial-price, elasticity, support, resistance, noise-intensity,
 #   tax: {buy, sell}, limit: {low, high, restricted},
-#   starting-stock, restock-amount
+#   starting-stock, restock-amount, liquidity: managed|player-only
 #
 # Rule of thumb for flavor:
 #   - A port that PRODUCES a good: low initial-price, high starting-stock, high restock-amount.
 #   - A port that DEMANDS a good: high initial-price, low starting-stock, low restock-amount.
 #
-# Ports are always open — there are no trading-hours windows. Stock refills on the
+# Player-only goods never get admin stock or restock (including when placed at a port).
+# Ports are always open — there are no trading-hours windows. Managed stock refills on the
 # restock timer (restock.min-minutes / max-minutes) configured per port or below.
 
 defaults:
@@ -25,6 +26,17 @@ defaults:
     min-minutes: 45
     max-minutes: 90
     amount: 64
+
+# Global catalog is selected explicitly here. 'player-only' goods have NO admin
+# supply, restock, or noise; players must fund buy orders / deposit sell orders.
+# Managed goods still use the existing stock/price engine, scoped to 'global'.
+global-market:
+  display-name: '<gold>Global Bazaar</gold>'
+  restock: { min-minutes: 45, max-minutes: 90, amount: 64 }
+  goods:
+    iron_ingot: { liquidity: player-only }
+    diamond: { liquidity: player-only }
+    cod: { liquidity: managed, starting-stock: 100, restock-amount: 32 }
 
 ports:
 

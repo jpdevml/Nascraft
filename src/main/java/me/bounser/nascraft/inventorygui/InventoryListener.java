@@ -8,6 +8,8 @@ import me.bounser.nascraft.inventorygui.MarketMenuManager.MenuSession;
 import me.bounser.nascraft.market.MarketManager;
 import me.bounser.nascraft.market.Port;
 import me.bounser.nascraft.market.unit.Item;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.event.ClickEvent;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -187,6 +189,17 @@ public class InventoryListener implements Listener {
             }
 
             MarketMenuManager.getInstance().openBuySellMenu(player, port, variant);
+            return;
+        }
+
+        if (item.isPlayerOnly() && (slot == config.getBuyOrderSlot() || slot == config.getSellOrderSlot())) {
+            if (!ensureInsidePort(player, port)) return;
+            String side = slot == config.getBuyOrderSlot() ? "buy" : "sell";
+            String examplePrice = String.format(java.util.Locale.ROOT, "%.2f", Math.max(0.01, item.getPrice().getInitialValue()));
+            String command = "/market order " + side + " " + item.getIdentifier() + " 64 " + examplePrice
+                    + (port.isGlobal() ? " global" : "");
+            Nascraft.getInstance().adventure().player(player).sendMessage(Component.text("Click to edit a " + side + " order (quantity and price): " + command)
+                    .clickEvent(ClickEvent.suggestCommand(command)));
             return;
         }
 
