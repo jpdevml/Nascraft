@@ -1,166 +1,43 @@
-# Nascraft ports.yml - ${project.version}
-#
-# Each port is a local market tied to a place in the world. Players must stand
-# within its radius to trade there (/market, /sell, /sellhand, /sellall).
-#
-# Every port keeps its OWN prices and stock for the goods it trades. Prices are
-# driven by local supply: plentiful goods are cheap, scarce goods are expensive.
-# Buy where a port produces, haul it, and sell where it's in demand.
-#
-# Per-good overrides (all optional, fall back to items.yml then config.yml):
-#   initial-price, elasticity, support, resistance, noise-intensity,
-#   tax: {buy, sell}, limit: {low, high, restricted},
-#   starting-stock, restock-amount, liquidity: managed|player-only
-#
-# Rule of thumb for flavor:
-#   - A port that PRODUCES a good: low initial-price, high starting-stock, high restock-amount.
-#   - A port that DEMANDS a good: high initial-price, low starting-stock, low restock-amount.
-#
-# Player-only goods never get admin stock or restock (including when placed at a port).
-# Ports are always open — there are no trading-hours windows. Managed stock refills on the
-# restock timer (restock.min-minutes / max-minutes) configured per port or below.
+# Nascraft markets - ${project.version}
+# Only the global market is configured. /market opens this Bazaar anywhere.
+# Resources are player-only: no admin stock, no automatic restock. Players
+# place buy/sell orders to supply them (or fill existing orders instantly).
+# Blocks and crops are managed goods: initial stock and periodic restock make
+# basic supplies available even without player orders.
+# Managed goods have fixed prices (elasticity: 0, noise-intensity: 0) and a
+# 20% buy / 20% sell spread. Buying from and immediately selling back to the
+# market therefore always loses money. Adjust prices for your server economy.
 
-defaults:
-  radius: 40
-  restock:
-    min-minutes: 45
-    max-minutes: 90
-    amount: 64
-
-# Global catalog is selected explicitly here. 'player-only' goods have NO admin
-# supply, restock, or noise; players must fund buy orders / deposit sell orders.
-# Managed goods still use the existing stock/price engine, scoped to 'global'.
 global-market:
-  display-name: '<gold>Global Bazaar</gold>'
-  restock: { min-minutes: 45, max-minutes: 90, amount: 64 }
+  display-name: '<gold>Global Market</gold>'
+  restock: { min-minutes: 45, max-minutes: 90, amount: 512 }
   goods:
+    # Player-backed resources: only player orders set the price.
     iron_ingot: { liquidity: player-only }
-    diamond: { liquidity: player-only }
-    cod: { liquidity: managed, starting-stock: 100, restock-amount: 32 }
+    gold_ingot: { liquidity: player-only }
+    gunpowder: { liquidity: player-only }
+    coal: { liquidity: player-only }
 
-ports:
+    # Common building supplies (no player order book).
+    oak_log:       { liquidity: managed, elasticity: 0, noise-intensity: 0, tax: {buy: 1, sell: 1}, starting-stock: 1012, restock-amount: 64 }
+    spruce_log:    { liquidity: managed, elasticity: 0, noise-intensity: 0, tax: {buy: 1, sell: 1}, starting-stock: 1012, restock-amount: 64 }
+    birch_log:     { liquidity: managed, elasticity: 0, noise-intensity: 0, tax: {buy: 1, sell: 1}, starting-stock: 1012, restock-amount: 64 }
+    oak_planks:    { liquidity: managed, elasticity: 0, noise-intensity: 0, tax: {buy: 1, sell: 1}, starting-stock: 1012, restock-amount: 64 }
+    cobblestone:   { liquidity: managed, elasticity: 0, noise-intensity: 0, tax: {buy: 1, sell: 1}, starting-stock: 1012, restock-amount: 64 }
+    stone:         { liquidity: managed, elasticity: 0, noise-intensity: 0, tax: {buy: 1, sell: 1}, starting-stock: 1012, restock-amount: 64 }
+    dirt:          { liquidity: managed, elasticity: 0, noise-intensity: 0, tax: {buy: 1, sell: 1}, starting-stock: 1012, restock-amount: 64 }
+    sand:          { liquidity: managed, elasticity: 0, noise-intensity: 0, tax: {buy: 1, sell: 1}, starting-stock: 1012, restock-amount: 64 }
+    glass:         { liquidity: managed, elasticity: 0, noise-intensity: 0, tax: {buy: 1, sell: 1}, starting-stock: 1012, restock-amount: 64 }
 
-  # Example fishing/farming harbor: cheap food & leather, hungry for metals.
-  saltmere:
-    display-name: '<gradient:#4fc3f7:#81d4fa>Saltmere Harbor</gradient>'
-    location:
-      world: 'world'
-      x: 0
-      z: 0
-      radius: 50
-    restock:
-      min-minutes: 40
-      max-minutes: 80
-    goods:
-      cod:
-        initial-price: 3
-        starting-stock: 800
-        restock-amount: 256
-      salmon:
-        initial-price: 4
-        starting-stock: 500
-        restock-amount: 160
-      wheat:
-        initial-price: 2
-        starting-stock: 600
-        restock-amount: 192
-      bread:
-        initial-price: 6
-        starting-stock: 300
-        restock-amount: 96
-      leather:
-        initial-price: 18
-        starting-stock: 400
-        restock-amount: 128
-      feather:
-        initial-price: 3
-        starting-stock: 600
-        restock-amount: 192
-      iron_ingot:
-        initial-price: 16
-        starting-stock: 40
-        restock-amount: 12
-      gold_ingot:
-        initial-price: 70
-        starting-stock: 15
-        restock-amount: 6
-      coal:
-        initial-price: 6
-        starting-stock: 80
-        restock-amount: 24
+    # Farming and raw meats.
+    bamboo:        { liquidity: managed, elasticity: 0, noise-intensity: 0, tax: {buy: 0.25, sell: 0.25}, starting-stock: 1012, restock-amount: 64 }
+    wheat:         { liquidity: managed, elasticity: 0, noise-intensity: 0, tax: {buy: 1, sell: 1}, starting-stock: 1012, restock-amount: 64 }
+    potato:        { liquidity: managed, elasticity: 0, noise-intensity: 0, tax: {buy: 1, sell: 1}, starting-stock: 1012, restock-amount: 64 }
+    wheat_seeds:   { liquidity: managed, elasticity: 0, noise-intensity: 0, tax: {buy: 0.5, sell: 0.5}, starting-stock: 1012, restock-amount: 64 }
+    beef:          { liquidity: managed, elasticity: 0, noise-intensity: 0, tax: {buy: 1, sell: 1}, starting-stock: 1012, restock-amount: 64 }
+    mutton:        { liquidity: managed, elasticity: 0, noise-intensity: 0, tax: {buy: 1, sell: 1}, starting-stock: 1012, restock-amount: 64 }
+    porkchop:      { liquidity: managed, elasticity: 0, noise-intensity: 0, tax: {buy: 1, sell: 1}, starting-stock: 1012, restock-amount: 64 }
 
-  # Example mining outpost: cheap metals, pays well for food & supplies.
-  emberfall:
-    display-name: '<gradient:#ff8a65:#ffb74d>Emberfall Docks</gradient>'
-    location:
-      world: 'world'
-      x: 1000
-      z: 1000
-      radius: 50
-    goods:
-      iron_ingot:
-        initial-price: 7
-        starting-stock: 500
-        restock-amount: 160
-      gold_ingot:
-        initial-price: 38
-        starting-stock: 200
-        restock-amount: 64
-      gunpowder:
-        initial-price: 40
-        starting-stock: 80
-        restock-amount: 24
-      coal:
-        initial-price: 2
-        starting-stock: 900
-        restock-amount: 288
-      copper_ingot:
-        initial-price: 2
-        starting-stock: 700
-        restock-amount: 224
-      leather:
-        initial-price: 45
-        starting-stock: 30
-        restock-amount: 10
-      bread:
-        initial-price: 14
-        starting-stock: 50
-        restock-amount: 16
-      cod:
-        initial-price: 9
-        starting-stock: 60
-        restock-amount: 20
-
-  # Example timber & wool town: cheap wood/wool, pays for metal and luxuries.
-  thornwick:
-    display-name: '<gradient:#a5d6a7:#66bb6a>Thornwick Landing</gradient>'
-    location:
-      world: 'world'
-      x: -1000
-      z: 500
-      radius: 45
-    goods:
-      oak_log:
-        initial-price: 1
-        starting-stock: 1200
-        restock-amount: 384
-      spruce_log:
-        initial-price: 1
-        starting-stock: 1200
-        restock-amount: 384
-      white_wool:
-        initial-price: 3
-        starting-stock: 500
-        restock-amount: 160
-      wheat:
-        initial-price: 4
-        starting-stock: 150
-        restock-amount: 48
-      iron_ingot:
-        initial-price: 14
-        starting-stock: 60
-        restock-amount: 18
-      emerald:
-        initial-price: 150
-        starting-stock: 10
-        restock-amount: 3
+# No location-restricted markets. Remove legacy ports here on existing installs
+# (bundled resources are not copied over previously saved configuration files).
+ports: {}

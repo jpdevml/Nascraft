@@ -1,5 +1,8 @@
 # Nascraft inventorygui.yml - ${project.version}
-# Layout of the in-game port market GUIs.
+# Layout of the market GUIs. The default installation has only the global Bazaar.
+# /market opens a category screen (54 slots, 28 goods per page).
+# Categories/icons are configured in items.yml under bazaar-categories. The
+# order editor uses preset buttons or chat input for custom quantity and price.
 
 # Menu listing the goods traded at the port the player is standing in.
 port-menu:
@@ -26,8 +29,7 @@ port-menu:
   fillers:
     black_stained_glass_pane: [0, 1, 2, 3, 5, 6, 7, 8, 9, 17, 18, 26, 27, 35, 36, 44, 46, 47, 48, 49, 50, 51, 52]
 
-# Ports directory: a read-only overview of every port and the goods it trades.
-# Opened with /market list; /market outside all ports opens the global market.
+# Optional directory for custom ports (not shown in the default global-only setup).
 directory-menu:
   size: 54
   ports:
@@ -65,10 +67,15 @@ buy-sell:
         slot: 20
       64:
         slot: 21
-  # For player-only goods these buttons suggest editable buy/sell order commands.
+  # For player-only goods these buttons open the buy/sell order editor.
   player-orders:
     buy-slot: 39
     sell-slot: 41
+  # Optional item-screen controls; avoid overlapping item, back, buy/sell or order slots.
+  bazaar-navigation:
+    purse-slot: 4
+    orders-slot: 37
+    claims-slot: 43
   sell-buttons:
     material: 'red_stained_glass_pane'
     buttons:

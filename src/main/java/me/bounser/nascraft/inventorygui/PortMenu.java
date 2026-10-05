@@ -110,7 +110,7 @@ public final class PortMenu {
         }
     }
 
-    private static ItemStack buildGoodDisplay(Item good) {
+    static ItemStack buildGoodDisplay(Item good) {
 
         MarketMenuManager manager = MarketMenuManager.getInstance();
 

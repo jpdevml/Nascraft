@@ -1,98 +1,45 @@
-# Nascraft items.yml - ${project.version}
-#
-# Global catalog of trade goods. Ports pick which of these they trade in
-# ports.yml, and can override any economic value per port.
-#
-# Per item (all optional except initial-price):
-#   initial-price, alias, elasticity, support, resistance, noise-intensity,
-#   tax: {buy, sell}, limit: {low, high, restricted},
-#   stock: {starting, restock-amount},
-#   child: {<id>: {multiplier, alias}}    (e.g. block forms of an ingot)
+# Nascraft goods catalog - ${project.version}
+# Categories drive the /market GUI; only goods in ports.yml are actually traded.
+# Resource prices below are reference values only: player-only orders set real prices.
+# Managed goods use a fixed price and a buy/sell spread (configured in ports.yml).
+
+bazaar-categories:
+  resources:
+    name: 'Resources'
+    icon: IRON_INGOT
+    goods: [iron_ingot, gold_ingot, gunpowder, coal]
+  blocks:
+    name: 'Building Blocks'
+    icon: OAK_PLANKS
+    goods: [oak_log, spruce_log, birch_log, oak_planks, cobblestone, stone, dirt, sand, glass]
+  crops:
+    name: 'Crops & Raw Food'
+    icon: WHEAT
+    goods: [bamboo, wheat, potato, wheat_seeds, beef, mutton, porkchop]
 
 items:
-  # Vanilla ItemStacks are still supported by material name (or a serialized
-  # Bukkit item-stack, model-data and display-name for custom items).
-  diamond:
-    material: DIAMOND
-    initial-price: 100
-    alias: 'Diamond'
+  iron_ingot: { initial-price: 10, alias: 'Iron Ingot' }
+  gold_ingot: { initial-price: 50, alias: 'Nickel Ingot' }
+  gunpowder: { initial-price: 50, alias: 'Gunpowder' }
+  coal: { initial-price: 3, alias: 'Coal' }
 
-  iron_ingot:
-    initial-price: 10
-    alias: 'Iron Ingot'
-    child:
-      iron_block:
-        multiplier: 9
-        alias: 'Iron Block'
+  # One oak log crafts into four planks. Both trade at 2 / 0.5 before the
+  # spread, so converting between them cannot generate money from the shop.
+  oak_log: { initial-price: 2, alias: 'Oak Log' }
+  spruce_log: { initial-price: 2, alias: 'Spruce Log' }
+  birch_log: { initial-price: 2, alias: 'Birch Log' }
+  oak_planks: { initial-price: 0.5, alias: 'Oak Planks' }
+  cobblestone: { initial-price: 1, alias: 'Cobblestone' }
+  stone: { initial-price: 2, alias: 'Stone' }
+  dirt: { initial-price: 0.5, alias: 'Dirt' }
+  sand: { initial-price: 1, alias: 'Sand' }
+  glass: { initial-price: 2, alias: 'Glass' }
 
-  gold_ingot:
-    initial-price: 50
-    alias: 'Gold Ingot'
-    child:
-      gold_block:
-        multiplier: 9
-        alias: 'Gold Block'
-
-  copper_ingot:
-    initial-price: 4
-    alias: 'Copper Ingot'
-    child:
-      copper_block:
-        multiplier: 9
-        alias: 'Copper Block'
-
-  coal:
-    initial-price: 3
-    alias: 'Coal'
-    child:
-      coal_block:
-        multiplier: 9
-        alias: 'Coal Block'
-
-  gunpowder:
-    initial-price: 50
-    alias: 'Gunpowder'
-
-  ender_eye:
-    initial-price: 100
-    alias: 'Eye of Ender'
-
-  leather:
-    initial-price: 30
-    alias: 'Leather'
-
-  feather:
-    initial-price: 5
-    alias: 'Feather'
-
-  cod:
-    initial-price: 4
-    alias: 'Cod'
-
-  salmon:
-    initial-price: 6
-    alias: 'Salmon'
-
-  wheat:
-    initial-price: 3
-    alias: 'Wheat'
-
-  bread:
-    initial-price: 8
-    alias: 'Bread'
-
-  oak_log:
-    initial-price: 2
-    alias: 'Oak Log'
-
-  spruce_log:
-    initial-price: 2
-    alias: 'Spruce Log'
-
-  white_wool:
-    initial-price: 5
-    alias: 'Wool'
-
-  emerald:
-    initial-price: 120
-    alias: 'Emerald'
+  bamboo: { initial-price: 0.2, alias: 'Bamboo' }
+  wheat: { initial-price: 3, alias: 'Wheat' }
+  potato: { initial-price: 3, alias: 'Potato' }
+  wheat_seeds: { initial-price: 0.5, alias: 'Wheat Seeds' }
+  # Vanilla Bukkit material IDs for raw meats are BEEF, MUTTON, PORKCHOP.
+  beef: { initial-price: 5, alias: 'Raw Beef' }
+  mutton: { initial-price: 5, alias: 'Raw Mutton' }
+  porkchop: { initial-price: 5, alias: 'Raw Porkchop' }

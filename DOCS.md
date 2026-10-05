@@ -24,10 +24,10 @@ one port and expensive at another. Goods restock on a per-port randomized timer.
 
 | Command | Purpose |
 |---------|---------|
-| `/market [portId]` | Open the local port, or global when outside all ports. A port id opens remotely with `nascraft.ports.bypass`. |
+| `/market [portId]` | Open the local port's category bazaar, or global when outside all ports. A port id opens remotely with `nascraft.ports.bypass`. |
 | `/market global` | Open global from anywhere, including inside a port. |
 | `/market order <buy\|sell> <good> <amount> <price> [global]` | Place an escrowed player-only order. Price is per item. |
-| `/market orders`, `/market cancel <id>`, `/market claim` | View orders, cancel unfilled quantity, and collect fills or cancelled escrow. |
+| `/market orders`, `/market claims`, `/market cancel <id>`, `/market claim` | Open order/claim GUIs or use command shortcuts to cancel/collect. All order operations are available through the GUI. |
 | `/sellhand` | Sell the item in your hand to the local port. |
 | `/sellall` | Sell sellable inventory items to the local port. |
 | `/sell-menu` | Open the sell GUI. |
@@ -41,7 +41,7 @@ one port and expensive at another. Goods restock on a per-port randomized timer.
 | `ports.yml` | Port definitions, the global catalog, and per-good `liquidity: managed\|player-only`. Ships with example ports. |
 | `items.yml` | The catalog of tradeable goods (materials, aliases, price params). |
 | `config.yml` | General settings + `discord-bot` section (token, link-method, trade log channel). |
-| `inventorygui.yml` | Port menu / buy-sell GUI layout (slots, fillers, navigation). |
+| `inventorygui.yml` | Port menu / buy-sell GUI layout (slots, fillers, bazaar navigation). |
 | `langs/*.yml` | Messages (en_US is the reference). |
 
 ### Defining a port (ports.yml)
@@ -66,12 +66,20 @@ restock; a port that **demands** it → high price, low stock, low restock.
 Existing installations must add this section to their existing `ports.yml`;
 updated bundled defaults do not overwrite existing files.
 `liquidity: player-only` turns off starting stock, admin restocks, and price
-noise: every item and coin must be supplied by players. Place an order with
+noise: every item and coin must be supplied by players. Players can create, price,
+review and cancel orders, and collect claims through `/market` without commands;
+click the quantity or price button to enter a value in chat (type `cancel` to return to the editor; invalid input can be retried). The existing command
+shortcuts remain available. Configure category icons/identifiers under
+`bazaar-categories` in `items.yml`; only goods selected in `ports.yml` appear.
+Existing installations without this section use the bundled categories, with
+unmatched goods under Other. No five-minute price timer is shown for player-only
+goods: best bids and asks come from player orders. Place an order with
 `/market order sell iron_ingot 64 10.00 global` (deposit 64 ingots) or
-`/market order buy iron_ingot 64 10.00 global` (reserve funds). The GUI buttons
+`/market order buy iron_ingot 64 10.00 global` (reserve funds). The GUI instant-trade buttons
 fill existing opposite orders all-or-nothing. Crossing limit orders are
-rejected; use an instant trade instead. Use `/market claim` to collect filled
-orders or cancelled escrow. Stock shown is the sum of sell orders. Conversion
+rejected; use an instant trade instead. Use the GUI Claims button (or `/market claim`) to collect filled
+orders or cancelled escrow. READY claims can be collected individually or in
+bulk; DELIVERING claims are never retried automatically. Stock shown is the sum of sell orders. Conversion
 variants (e.g. iron blocks sharing ingot stock) are disabled for player-only
 goods. Player-only trading currently uses two-decimal Vault prices with no tax.
 

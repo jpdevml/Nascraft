@@ -6,6 +6,7 @@ import me.bounser.nascraft.config.Config;
 import me.bounser.nascraft.config.lang.Lang;
 import me.bounser.nascraft.config.lang.Message;
 import me.bounser.nascraft.inventorygui.MarketMenuManager;
+import me.bounser.nascraft.inventorygui.BazaarMenus;
 import me.bounser.nascraft.market.MarketManager;
 import me.bounser.nascraft.market.Port;
 import me.bounser.nascraft.market.OrderBook;
@@ -53,8 +54,11 @@ public class MarketCommand extends Command {
             return;
         }
         if (args.length > 0 && args[0].equalsIgnoreCase("orders")) {
-            List<String> orders = OrderBook.get().orders(player);
-            player.sendMessage(orders.isEmpty() ? "No open orders." : String.join("\n", orders));
+            BazaarMenus.orders(player, MarketManager.getInstance().getMarketAt(player.getLocation()), 0);
+            return;
+        }
+        if (args.length > 0 && args[0].equalsIgnoreCase("claims")) {
+            BazaarMenus.claims(player, MarketManager.getInstance().getMarketAt(player.getLocation()), 0);
             return;
         }
         if (args.length == 2 && args[0].equalsIgnoreCase("cancel")) {
@@ -93,13 +97,16 @@ public class MarketCommand extends Command {
 
         // /market global is always available, including while standing in a port.
         if (args.length >= 1 && args[0].equalsIgnoreCase("global")) {
-            MarketMenuManager.getInstance().openPortMenu(player, MarketManager.getInstance().getGlobalMarket());
+            BazaarMenus.categories(player, MarketManager.getInstance().getGlobalMarket(), 0);
             return;
         }
 
-        // /market list -> the ports directory (open/closed status and hours of every port).
+        // In a global-only setup there is no directory to browse.
         if (args.length >= 1 && args[0].equalsIgnoreCase("list")) {
-            MarketMenuManager.getInstance().openDirectory(player);
+            if (MarketManager.getInstance().getPortIds().isEmpty())
+                BazaarMenus.categories(player, MarketManager.getInstance().getGlobalMarket(), 0);
+            else
+                MarketMenuManager.getInstance().openDirectory(player);
             return;
         }
 
@@ -124,7 +131,7 @@ public class MarketCommand extends Command {
             port = MarketManager.getInstance().getMarketAt(player.getLocation());
         }
 
-        MarketMenuManager.getInstance().openPortMenu(player, port);
+        BazaarMenus.categories(player, port, 0);
     }
 
     @Override
@@ -132,9 +139,10 @@ public class MarketCommand extends Command {
 
         if (args.length == 1) {
             List<String> options = new ArrayList<>();
-            options.add("list");
+            if (!MarketManager.getInstance().getPortIds().isEmpty()) options.add("list");
             options.add("global");
             options.add("orders");
+            options.add("claims");
             options.add("order");
             options.add("cancel");
             options.add("claim");

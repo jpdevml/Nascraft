@@ -68,11 +68,17 @@ public final class OrderBook {
 
     /** Quote an entire instant trade; returns 0 when liquidity is insufficient. */
     public double quote(Item item, int amount, boolean buy) {
+        return quote(item, amount, buy, null);
+    }
+
+    /** A displayed quote must not count the viewer's own orders: fill() skips them. */
+    public double quote(Item item, int amount, boolean buy, UUID taker) {
         valid(item, amount);
         try (Connection db = DatabaseExecutor.getInstance().getConnection()) {
             List<Order> orders = matches(db, item, buy, 0);
             long cost = 0; int left = amount;
             for (Order order : orders) {
+                if (taker != null && order.owner.equals(taker.toString())) continue;
                 int count = Math.min(left, order.remaining);
                 cost = Math.addExact(cost, product(order.price, count));
                 left -= count;
@@ -84,11 +90,105 @@ public final class OrderBook {
 
     private record Order(long id, String owner, long price, int remaining, String data) { }
 
+    /** Read-only views for the GUI. Never expose ownership through a menu slot alone. */
+    public record OpenOrder(long id, String market, String identifier, boolean buy, int remaining, long priceCents) { }
+    public record ClaimView(long id, String kind, long amount, String itemData, String status) { }
+    public record BookView(long sellVolume, long buyVolume, long bestAskCents, long bestBidCents) { }
+
+    /** Display only. A preview is never removed from the claim ledger or handed to a player. */
+    public ItemStack claimPreview(ClaimView claimView) {
+        if (!claimView.kind().equals("ITEM")) return new ItemStack(org.bukkit.Material.GOLD_INGOT);
+        try {
+            ItemStack preview = decode(claimView.itemData());
+            preview.setAmount(1);
+            return preview;
+        } catch (IOException | ClassNotFoundException | IllegalArgumentException ex) {
+            Nascraft.getInstance().getLogger().warning("Unreadable claim #" + claimView.id() + ": " + ex);
+            return new ItemStack(org.bukkit.Material.BARRIER);
+        }
+    }
+
+    public BookView book(Item item) {
+        long sell = 0, buy = 0, ask = 0, bid = 0;
+        try (Connection db = DatabaseExecutor.getInstance().getConnection();
+             PreparedStatement sql = db.prepareStatement("SELECT side, price_cents, remaining, item_data FROM bazaar_orders WHERE market_id=? AND identifier=? AND remaining>0 ORDER BY id")) {
+            sql.setString(1, item.getPort().getId()); sql.setString(2, item.getIdentifier());
+            try (ResultSet rows = sql.executeQuery()) {
+                while (rows.next()) {
+                    try {
+                        if (!decode(rows.getString(4)).isSimilar(item.getItemStack())) continue;
+                    } catch (IOException | ClassNotFoundException | IllegalArgumentException ex) {
+                        throw new SQLException("Invalid escrow item in order book", ex);
+                    }
+                    long price = rows.getLong(2);
+                    if (rows.getString(1).equals("SELL")) {
+                        sell += rows.getInt(3);
+                        if (ask == 0 || price < ask) ask = price;
+                    } else {
+                        buy += rows.getInt(3);
+                        if (price > bid) bid = price;
+                    }
+                }
+            }
+            return new BookView(sell, buy, ask, bid);
+        } catch (SQLException ex) { throw new IllegalStateException("Order book unavailable", ex); }
+    }
+
+    /** pageSize includes one look-ahead row; each visible page holds pageSize - 1 entries. */
+    public List<OpenOrder> openOrders(Player player, int page, int pageSize) {
+        List<OpenOrder> result = new ArrayList<>();
+        if (page < 0 || pageSize < 2 || pageSize > 100 || (long) page * pageSize > Integer.MAX_VALUE)
+            throw new IllegalArgumentException("Invalid page");
+        try (Connection db = DatabaseExecutor.getInstance().getConnection();
+             PreparedStatement sql = db.prepareStatement("SELECT id, market_id, identifier, side, remaining, price_cents FROM bazaar_orders WHERE owner=? AND remaining>0 ORDER BY id DESC LIMIT ? OFFSET ?")) {
+            sql.setString(1, player.getUniqueId().toString()); sql.setInt(2, pageSize); sql.setLong(3, (long) page * (pageSize - 1));
+            try (ResultSet rows = sql.executeQuery()) {
+                while (rows.next()) result.add(new OpenOrder(rows.getLong(1), rows.getString(2), rows.getString(3),
+                        rows.getString(4).equals("BUY"), rows.getInt(5), rows.getLong(6)));
+            }
+        } catch (SQLException ex) { throw new IllegalStateException("Orders unavailable", ex); }
+        return result;
+    }
+
+    public OpenOrder openOrder(Player player, long id) {
+        try (Connection db = DatabaseExecutor.getInstance().getConnection();
+             PreparedStatement sql = db.prepareStatement("SELECT market_id, identifier, side, remaining, price_cents FROM bazaar_orders WHERE id=? AND owner=? AND remaining>0")) {
+            sql.setLong(1, id); sql.setString(2, player.getUniqueId().toString());
+            try (ResultSet row = sql.executeQuery()) {
+                return row.next() ? new OpenOrder(id, row.getString(1), row.getString(2), row.getString(3).equals("BUY"), row.getInt(4), row.getLong(5)) : null;
+            }
+        } catch (SQLException ex) { throw new IllegalStateException("Order unavailable", ex); }
+    }
+
+    /** pageSize includes one look-ahead row; each visible page holds pageSize - 1 entries. */
+    public List<ClaimView> claims(Player player, int page, int pageSize) {
+        List<ClaimView> result = new ArrayList<>();
+        if (page < 0 || pageSize < 2 || pageSize > 100 || (long) page * pageSize > Integer.MAX_VALUE)
+            throw new IllegalArgumentException("Invalid page");
+        try (Connection db = DatabaseExecutor.getInstance().getConnection();
+             PreparedStatement sql = db.prepareStatement("SELECT id, kind, amount, item_data, status FROM bazaar_claims WHERE owner=? AND status IN ('READY','DELIVERING') ORDER BY id LIMIT ? OFFSET ?")) {
+            sql.setString(1, player.getUniqueId().toString()); sql.setInt(2, pageSize); sql.setLong(3, (long) page * (pageSize - 1));
+            try (ResultSet rows = sql.executeQuery()) {
+                while (rows.next()) result.add(new ClaimView(rows.getLong(1), rows.getString(2), rows.getLong(3),
+                        rows.getString(4), rows.getString(5)));
+            }
+        } catch (SQLException ex) { throw new IllegalStateException("Claims unavailable", ex); }
+        return result;
+    }
+
+    /**
+     * Price-time priority for instant fills: purchases take the lowest asks,
+     * while sales take the highest bids. The order id breaks price ties so the
+     * oldest order at a price is filled first.
+     */
+    static String instantFillOrder(boolean buy) {
+        return " ORDER BY price_cents " + (buy ? "ASC" : "DESC") + ", id ASC";
+    }
+
     private List<Order> matches(Connection db, Item item, boolean buy, long limit) throws SQLException {
         String side = buy ? "SELL" : "BUY";
         String compare = limit > 0 ? (buy ? " AND price_cents<=?" : " AND price_cents>=?") : "";
-        String sort = buy ? "ASC" : "DESC";
-        try (PreparedStatement sql = db.prepareStatement("SELECT id, owner, price_cents, remaining, item_data FROM bazaar_orders WHERE market_id=? AND identifier=? AND side=? AND remaining>0" + compare + " ORDER BY price_cents " + sort + ", id ASC")) {
+        try (PreparedStatement sql = db.prepareStatement("SELECT id, owner, price_cents, remaining, item_data FROM bazaar_orders WHERE market_id=? AND identifier=? AND side=? AND remaining>0" + compare + instantFillOrder(buy))) {
             sql.setString(1, item.getPort().getId()); sql.setString(2, item.getIdentifier()); sql.setString(3, side);
             if (limit > 0) sql.setLong(4, limit);
             List<Order> result = new ArrayList<>();
@@ -191,7 +291,11 @@ public final class OrderBook {
         } finally { busy = false; }
     }
 
-    /** All-or-nothing instant fill. Credits to both parties are claims, never free-floating inventory. */
+    /**
+     * All-or-nothing instant fill. Buys consume the cheapest sell orders and
+     * sales consume the highest buy orders; credits to both parties are claims,
+     * never free-floating inventory.
+     */
     public synchronized double fill(Player player, Item item, int amount, boolean buy, boolean inventoryEscrowed) {
         valid(item, amount);
         if (busy || !MarketManager.getInstance().getActive() || !allowed(player, item)) return -1;
@@ -299,12 +403,16 @@ public final class OrderBook {
     }
 
     /** Claim is marked before delivering it. Interrupted/uncertain external payouts require manual reconciliation. */
-    public synchronized int collect(Player player) {
+    public int collect(Player player) { return collect(player, -1); }
+
+    /** Collect a single READY claim, or all READY claims when id is -1. Never retry DELIVERING. */
+    public synchronized int collect(Player player, long idFilter) {
         if (busy) return 0;
         busy = true; int done = 0;
         try (Connection db = DatabaseExecutor.getInstance().getConnection();
-             PreparedStatement sql = db.prepareStatement("SELECT id, kind, amount, item_data FROM bazaar_claims WHERE owner=? AND status='READY' ORDER BY id")) {
+             PreparedStatement sql = db.prepareStatement("SELECT id, kind, amount, item_data FROM bazaar_claims WHERE owner=? AND status='READY'" + (idFilter >= 0 ? " AND id=?" : "") + " ORDER BY id")) {
             sql.setString(1, player.getUniqueId().toString());
+            if (idFilter >= 0) sql.setLong(2, idFilter);
             List<Object[]> claims = new ArrayList<>();
             try (ResultSet rows = sql.executeQuery()) {
                 while (rows.next()) claims.add(new Object[]{rows.getLong(1), rows.getString(2), rows.getLong(3), rows.getString(4)});

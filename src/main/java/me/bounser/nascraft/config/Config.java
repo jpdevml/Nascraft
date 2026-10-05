@@ -24,6 +24,7 @@ public class Config {
     private FileConfiguration items;
     private FileConfiguration ports;
     private FileConfiguration inventorygui;
+    private final FileConfiguration bundledItems;
 
     private static Config instance;
     private Nascraft main;
@@ -40,6 +41,10 @@ public class Config {
         items = setupFile("items.yml");
         ports = setupFile("ports.yml");
         inventorygui = setupFile("inventorygui.yml");
+        try (java.io.InputStreamReader reader = new java.io.InputStreamReader(
+                Objects.requireNonNull(main.getResource("items.yml")), java.nio.charset.StandardCharsets.UTF_8)) {
+            bundledItems = YamlConfiguration.loadConfiguration(reader);
+        } catch (java.io.IOException ex) { throw new IllegalStateException("Cannot load bundled bazaar categories", ex); }
     }
 
     public YamlConfiguration setupFile(String name) {
@@ -486,6 +491,36 @@ public class Config {
         }
     }
 
+    // Bazaar categories are navigation only: ports.yml still decides which goods exist.
+    public record BazaarCategory(String id, String name, Material icon, List<String> goods) { }
+
+    public List<BazaarCategory> getBazaarCategories(Port port) {
+        List<BazaarCategory> result = new ArrayList<>();
+        Set<String> used = new HashSet<>();
+        ConfigurationSection sections = items.getConfigurationSection("bazaar-categories");
+        if (sections == null) sections = bundledItems.getConfigurationSection("bazaar-categories");
+        if (sections != null) for (String id : sections.getKeys(false)) {
+            List<String> goods = new ArrayList<>();
+            for (String good : sections.getStringList(id + ".goods")) {
+                Item item = port.getItem(good);
+                if (item != null && item.isParent() && used.add(good)) goods.add(good);
+            }
+            if (!goods.isEmpty()) result.add(new BazaarCategory(id,
+                    sections.getString(id + ".name", id),
+                    materialOrDefault(sections.getString(id + ".icon"), Material.CHEST), goods));
+        }
+        List<String> other = new ArrayList<>();
+        for (Item item : port.getParentItemsInAlphabeticalOrder())
+            if (used.add(item.getIdentifier())) other.add(item.getIdentifier());
+        if (!other.isEmpty()) result.add(new BazaarCategory("other", "Other", Material.CHEST, other));
+        return result;
+    }
+
+    public org.bukkit.Sound bazaarSound(String action, org.bukkit.Sound fallback) {
+        try { return org.bukkit.Sound.valueOf(config.getString("bazaar.sounds." + action, fallback.name())); }
+        catch (IllegalArgumentException ex) { return fallback; }
+    }
+
     // GUI: port menu
 
     public int getPortMenuSize() {
@@ -593,6 +628,11 @@ public class Config {
 
         return fills;
     }
+
+    // Additional bazaar navigation on the item page; slots must not overlap trade buttons.
+    public int getBazaarOrdersSlot() { return inventorygui.getInt("buy-sell.bazaar-navigation.orders-slot", 37); }
+    public int getBazaarClaimsSlot() { return inventorygui.getInt("buy-sell.bazaar-navigation.claims-slot", 43); }
+    public int getBazaarPurseSlot() { return inventorygui.getInt("buy-sell.bazaar-navigation.purse-slot", 4); }
 
     // GUI: buy-sell menu
 

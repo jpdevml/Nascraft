@@ -27,9 +27,9 @@ database:
 # log (viewable in-game with /nascraft log) and the optional Discord log below.
 trade-log:
   # Print each trade to the server console (shows up in latest.log).
-  console: true
+  console: false
   # Also append each trade to plugins/Nascraft/trades.log (with a timestamp).
-  file: false
+  file: true
 
 # Money is handled through Vault.
 currency:
@@ -73,6 +73,14 @@ ports:
     # true: announce restocks to the whole server.
     # false: only players inside the port hear about it.
     global: false
+
+# Sounds used by the bazaar GUI; invalid names fall back to defaults.
+bazaar:
+  sounds:
+    open: BLOCK_CHEST_OPEN
+    click: UI_BUTTON_CLICK
+    success: ENTITY_PLAYER_LEVELUP
+    error: ENTITY_VILLAGER_NO
 
 commands:
   nascraft:

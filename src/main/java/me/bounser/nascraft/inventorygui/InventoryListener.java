@@ -8,12 +8,13 @@ import me.bounser.nascraft.inventorygui.MarketMenuManager.MenuSession;
 import me.bounser.nascraft.market.MarketManager;
 import me.bounser.nascraft.market.Port;
 import me.bounser.nascraft.market.unit.Item;
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.event.ClickEvent;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.player.AsyncPlayerChatEvent;
+import org.bukkit.event.inventory.InventoryOpenEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
@@ -49,7 +50,7 @@ public class InventoryListener implements Listener {
 
         MenuSession session = manager.getSession(player.getUniqueId());
 
-        if (session == null) return;
+        if (session == null || (session.getInventory() != null && session.getInventory() != event.getView().getTopInventory())) return;
 
         event.setCancelled(true);
 
@@ -76,6 +77,15 @@ public class InventoryListener implements Listener {
         ItemStack clicked = event.getCurrentItem();
 
         if (clicked == null || clicked.getType().isAir()) return;
+
+        if (session.getType() != MarketMenuManager.MenuType.PORT && session.getType() != MarketMenuManager.MenuType.BUY_SELL) {
+            try { BazaarMenus.click(player, port, session, rawSlot); }
+            catch (IllegalStateException ex) {
+                Nascraft.getInstance().getLogger().warning("Bazaar GUI unavailable: " + ex);
+                BazaarMenus.feedback(player, "Market data unavailable. Try again later.", false);
+            }
+            return;
+        }
 
         if (session.getType() == MarketMenuManager.MenuType.PORT) {
             handlePortMenuClick(player, port, session, event);
@@ -171,8 +181,16 @@ public class InventoryListener implements Listener {
         // Back to the port overview.
 
         if (config.getBuySellBackEnabled() && slot == config.getBuySellBackSlot()) {
-            MarketMenuManager.getInstance().openPortMenu(player, port);
+            if (session.getCategoryId() != null) BazaarMenus.goods(player, port, session.getCategoryId(), session.getPage(), session.getCategoryPage());
+            else BazaarMenus.categories(player, port, 0);
             return;
+        }
+
+        if (slot == config.getBazaarOrdersSlot() && BuySellMenu.navigationAvailable(config, slot, event.getView().getTopInventory().getSize())) {
+            BazaarMenus.orders(player, port, 0); return;
+        }
+        if (slot == config.getBazaarClaimsSlot() && BuySellMenu.navigationAvailable(config, slot, event.getView().getTopInventory().getSize())) {
+            BazaarMenus.claims(player, port, 0); return;
         }
 
         // Switch to a displayed variant (child or parent of the family).
@@ -188,18 +206,16 @@ public class InventoryListener implements Listener {
                 return;
             }
 
-            MarketMenuManager.getInstance().openBuySellMenu(player, port, variant);
+            MarketMenuManager.getInstance().openBuySellMenu(player, port, variant, session);
             return;
         }
 
         if (item.isPlayerOnly() && (slot == config.getBuyOrderSlot() || slot == config.getSellOrderSlot())) {
             if (!ensureInsidePort(player, port)) return;
-            String side = slot == config.getBuyOrderSlot() ? "buy" : "sell";
-            String examplePrice = String.format(java.util.Locale.ROOT, "%.2f", Math.max(0.01, item.getPrice().getInitialValue()));
-            String command = "/market order " + side + " " + item.getIdentifier() + " 64 " + examplePrice
-                    + (port.isGlobal() ? " global" : "");
-            Nascraft.getInstance().adventure().player(player).sendMessage(Component.text("Click to edit a " + side + " order (quantity and price): " + command)
-                    .clickEvent(ClickEvent.suggestCommand(command)));
+            session.setBuyOrder(slot == config.getBuyOrderSlot());
+            session.setQuantity(0);
+            session.setPriceCents(0);
+            BazaarMenus.editor(player, port, session);
             return;
         }
 
@@ -211,7 +227,9 @@ public class InventoryListener implements Listener {
 
             if (!ensureInsidePort(player, port)) return;
 
-            item.buy(buyAmount, player.getUniqueId(), true);
+            double worth = item.buy(buyAmount, player.getUniqueId(), true);
+            player.playSound(player.getLocation(), config.bazaarSound(worth > 0 ? "success" : "error",
+                    worth > 0 ? org.bukkit.Sound.ENTITY_PLAYER_LEVELUP : org.bukkit.Sound.ENTITY_VILLAGER_NO), .6f, 1.1f);
 
             session.setVariantSlots(BuySellMenu.populate(event.getView().getTopInventory(), item));
             return;
@@ -225,10 +243,36 @@ public class InventoryListener implements Listener {
 
             if (!ensureInsidePort(player, port)) return;
 
-            item.sell(sellAmount, player.getUniqueId(), true);
+            double worth = item.sell(sellAmount, player.getUniqueId(), true);
+            player.playSound(player.getLocation(), config.bazaarSound(worth > 0 ? "success" : "error",
+                    worth > 0 ? org.bukkit.Sound.ENTITY_PLAYER_LEVELUP : org.bukkit.Sound.ENTITY_VILLAGER_NO), .6f, 1.1f);
 
             session.setVariantSlots(BuySellMenu.populate(event.getView().getTopInventory(), item));
         }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void onChat(AsyncPlayerChatEvent event) {
+        MarketMenuManager manager = MarketMenuManager.getInstance();
+        MarketMenuManager.PendingInput pending = manager.getPendingInput(event.getPlayer().getUniqueId());
+        if (pending == null) return;
+        event.setCancelled(true); // Never broadcast a draft price or quantity.
+        String message = event.getMessage();
+        Player player = event.getPlayer();
+        if (event.isAsynchronous())
+            Bukkit.getScheduler().runTask(Nascraft.getInstance(), () -> BazaarMenus.handleChatInput(player, pending, message));
+        else BazaarMenus.handleChatInput(player, pending, message);
+    }
+
+    @EventHandler
+    public void onOpen(InventoryOpenEvent event) {
+        // Closing a GUI can transition to the player's own inventory. That is the
+        // expected state while typing, not a reason to discard the pending draft.
+        MarketMenuManager manager = MarketMenuManager.getInstance();
+        MarketMenuManager.PendingInput pending = manager.getPendingInput(event.getPlayer().getUniqueId());
+        if (pending != null && !pending.closingEditor()
+                && !BazaarMenus.isNormalInventoryType(event.getInventory().getType()))
+            manager.cancelPendingInput(event.getPlayer().getUniqueId());
     }
 
     @EventHandler
@@ -236,7 +280,8 @@ public class InventoryListener implements Listener {
 
         if (!(event.getWhoClicked() instanceof Player)) return;
 
-        if (MarketMenuManager.getInstance().getSession(event.getWhoClicked().getUniqueId()) != null)
+        MenuSession session = MarketMenuManager.getInstance().getSession(event.getWhoClicked().getUniqueId());
+        if (session != null && (session.getInventory() == null || session.getInventory() == event.getView().getTopInventory()))
             event.setCancelled(true);
     }
 
@@ -252,7 +297,11 @@ public class InventoryListener implements Listener {
 
         MarketMenuManager manager = MarketMenuManager.getInstanceIfPresent();
 
-        if (manager != null) manager.removeSession((Player) event.getPlayer());
+        if (manager != null) {
+            MenuSession session = manager.getSession(event.getPlayer().getUniqueId());
+            if (session != null && (session.getInventory() == null || session.getInventory() == event.getInventory()))
+                manager.removeSession((Player) event.getPlayer());
+        }
     }
 
     // Helpers:
@@ -279,7 +328,7 @@ public class InventoryListener implements Listener {
     }
 
     private void endSession(Player player) {
-        MarketMenuManager.getInstance().removeSession(player);
+        // Keep the session until InventoryCloseEvent so intervening clicks remain cancelled.
         scheduleClose(player);
     }
 

@@ -24,12 +24,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Tracks which plugin GUI each player has open and which port it is bound to.
  *
- * Sessions are keyed by UUID and only store identifiers (port id, item
- * identifier, slot-to-identifier maps). Ports and items are re-resolved
+ * Sessions are keyed by UUID and store identifiers, paging and uncommitted
+ * form input (never a port/item object). Ports and items are re-resolved
  * through {@link me.bounser.nascraft.market.MarketManager} on every click so
  * a /nascraft reload can never leave a menu operating on stale objects.
  *
@@ -39,7 +40,7 @@ import java.util.UUID;
  */
 public class MarketMenuManager {
 
-    public enum MenuType { PORT, BUY_SELL, DIRECTORY }
+    public enum MenuType { PORT, BUY_SELL, DIRECTORY, CATEGORIES, GOODS, ORDERS, CLAIMS, ORDER_EDITOR, ORDER_CANCEL }
 
     public static final class MenuSession {
 
@@ -49,6 +50,14 @@ public class MarketMenuManager {
         private int page;
         private String itemIdentifier;
         private Map<Integer, String> variantSlots = new HashMap<>();
+        private Inventory inventory;
+        private String categoryId;
+        private int categoryPage;
+        private boolean buyOrder;
+        private int quantity;
+        private long priceCents;
+        private long orderId;
+        private Map<Integer, Long> orderSlots = new HashMap<>();
 
         public MenuSession(String portId, MenuType type) {
             this.portId = portId;
@@ -72,11 +81,76 @@ public class MarketMenuManager {
         public void setVariantSlots(Map<Integer, String> variantSlots) {
             this.variantSlots = variantSlots == null ? new HashMap<>() : variantSlots;
         }
+
+        public Inventory getInventory() { return inventory; }
+        public String getCategoryId() { return categoryId; }
+        public void setCategoryId(String id) { categoryId = id; }
+        public int getCategoryPage() { return categoryPage; }
+        public void setCategoryPage(int value) { categoryPage = value; }
+        public boolean isBuyOrder() { return buyOrder; }
+        public void setBuyOrder(boolean value) { buyOrder = value; }
+        public int getQuantity() { return quantity; }
+        public void setQuantity(int value) { quantity = value; }
+        public long getPriceCents() { return priceCents; }
+        public void setPriceCents(long value) { priceCents = value; }
+        public long getOrderId() { return orderId; }
+        public void setOrderId(long value) { orderId = value; }
+        public Map<Integer, Long> getOrderSlots() { return orderSlots; }
+        public void setOrderSlots(Map<Integer, Long> value) { orderSlots = value; }
+
+        public void copyContext(MenuSession from) {
+            if (from == null) return;
+            categoryId = from.categoryId;
+            categoryPage = from.categoryPage;
+            page = from.page;
+            itemIdentifier = from.itemIdentifier;
+            buyOrder = from.buyOrder;
+            quantity = from.quantity;
+            priceCents = from.priceCents;
+        }
     }
 
-    private static MarketMenuManager instance;
+    private static volatile MarketMenuManager instance;
 
     private final Map<UUID, MenuSession> sessions = new HashMap<>();
+    // Chat events can run asynchronously. Only the reference lookup is done off-thread;
+    // all mutation, validation and Bukkit calls happen on the server thread.
+    private final Map<UUID, PendingInput> pendingInputs = new ConcurrentHashMap<>();
+    private long menuGeneration;
+
+    public static final class PendingInput {
+        private final MenuSession draft;
+        private final boolean price;
+        private final long generation;
+        // Only changed on the server thread; onOpen must not treat our own close
+        // transition as the player opening another menu.
+        private boolean closingEditor;
+
+        private PendingInput(MenuSession draft, boolean price, long generation) {
+            this.draft = draft;
+            this.price = price;
+            this.generation = generation;
+        }
+
+        public MenuSession draft() { return draft; }
+        public boolean price() { return price; }
+        public long generation() { return generation; }
+        public boolean closingEditor() { return closingEditor; }
+        public void setClosingEditor(boolean closing) { closingEditor = closing; }
+    }
+
+    public PendingInput getPendingInput(UUID uuid) { return pendingInputs.get(uuid); }
+
+    public PendingInput beginChatInput(Player player, MenuSession draft, boolean price) {
+        PendingInput pending = new PendingInput(draft, price, menuGeneration);
+        pendingInputs.put(player.getUniqueId(), pending);
+        return pending;
+    }
+
+    public void removePendingInput(UUID uuid, PendingInput pending) { pendingInputs.remove(uuid, pending); }
+    public void cancelPendingInput(UUID uuid) { pendingInputs.remove(uuid); }
+
+    public long getMenuGeneration() { return menuGeneration; }
 
     public static MarketMenuManager getInstance() { return instance == null ? instance = new MarketMenuManager() : instance; }
 
@@ -88,10 +162,26 @@ public class MarketMenuManager {
     /** Removes only the menu session. Called whenever a plugin GUI closes. */
     public void removeSession(Player player) { sessions.remove(player.getUniqueId()); }
 
+    /** Install after opening: opening fires a close event for the old inventory. */
+    public void open(Player player, Inventory gui, MenuSession session) {
+        cancelPendingInput(player.getUniqueId());
+        player.openInventory(gui);
+        trackOpened(player, gui, session);
+    }
+
+    /** Register the newly opened inventory after the previous inventory has closed. */
+    public void trackOpened(Player player, Inventory gui, MenuSession session) {
+        session.inventory = gui;
+        sessions.put(player.getUniqueId(), session);
+    }
+
     /** Full cleanup for a player. Called on quit: also returns any items held in the sell menu. */
     public void clearSession(Player player) {
 
+        // A single player quitting must not invalidate other players' chat drafts.
+        // Their scheduled callbacks already check the pending input by identity.
         sessions.remove(player.getUniqueId());
+        cancelPendingInput(player.getUniqueId());
 
         SellInvListener sellInvListener = SellInvListener.getInstanceIfPresent();
         if (sellInvListener != null) sellInvListener.returnHeldItems(player);
@@ -104,6 +194,7 @@ public class MarketMenuManager {
      */
     public void closeAllMenus() {
 
+        menuGeneration++;
         SellInvListener sellInvListener = SellInvListener.getInstanceIfPresent();
         if (sellInvListener != null) sellInvListener.returnAllHeldItems();
 
@@ -116,6 +207,7 @@ public class MarketMenuManager {
         }
 
         sessions.clear();
+        pendingInputs.clear();
     }
 
     // Menu openers:
@@ -133,11 +225,9 @@ public class MarketMenuManager {
 
         PortMenu.populate(gui, port, page);
 
-        player.openInventory(gui);
-
         MenuSession session = new MenuSession(port.getId(), MenuType.PORT);
         session.setPage(page);
-        sessions.put(player.getUniqueId(), session);
+        open(player, gui, session);
     }
 
     public void openDirectory(Player player) { openDirectory(player, 0); }
@@ -152,11 +242,9 @@ public class MarketMenuManager {
 
         DirectoryMenu.populate(gui, page);
 
-        player.openInventory(gui);
-
         MenuSession session = new MenuSession(null, MenuType.DIRECTORY);
         session.setPage(page);
-        sessions.put(player.getUniqueId(), session);
+        open(player, gui, session);
     }
 
     public void openBuySellMenu(Player player, Port port, Item item) {
@@ -165,14 +253,21 @@ public class MarketMenuManager {
 
         Inventory gui = Bukkit.createInventory(null, config.getBuySellMenuSize(), item.getFormattedName());
 
-        Map<Integer, String> variantSlots = BuySellMenu.populate(gui, item);
-
-        player.openInventory(gui);
+        Map<Integer, String> variantSlots = BuySellMenu.populate(gui, item, player);
 
         MenuSession session = new MenuSession(port.getId(), MenuType.BUY_SELL);
         session.setItemIdentifier(item.getIdentifier());
         session.setVariantSlots(variantSlots);
-        sessions.put(player.getUniqueId(), session);
+        open(player, gui, session);
+        BuySellMenu.purse(gui, item, player);
+    }
+
+    public void openBuySellMenu(Player player, Port port, Item item, MenuSession previous) {
+        openBuySellMenu(player, port, item);
+        MenuSession session = getSession(player.getUniqueId());
+        session.setCategoryId(previous.getCategoryId());
+        session.setCategoryPage(previous.getCategoryPage());
+        session.setPage(previous.getPage());
     }
 
     // Shared GUI helpers:
@@ -231,17 +326,23 @@ public class MarketMenuManager {
      * Builds the price lore of an item: current/buy/sell price, change over
      * the last hour and the port's stock of the good.
      */
-    public List<String> getLoreFromItem(Item item, String lore) {
+    public List<String> getLoreFromItem(Item item, String lore) { return getLoreFromItem(item, lore, null); }
 
+    public List<String> getLoreFromItem(Item item, String lore, Player viewer) {
+
+        OrderBook.BookView book = item.isPlayerOnly() ? OrderBook.get().book(item) : null;
+        double playerBuy = book == null ? 0 : viewer == null ? book.bestAskCents() / 100.0 : OrderBook.get().quote(item, 1, true, viewer.getUniqueId());
+        double playerSell = book == null ? 0 : viewer == null ? book.bestBidCents() / 100.0 : OrderBook.get().quote(item, 1, false, viewer.getUniqueId());
         double valueAnHourAgo = item.getPrice().getValueAnHourAgo();
 
         float change = item.isPlayerOnly() || valueAnHourAgo == 0 ? 0 :
                 RoundUtils.roundToOne((float) (-100 + item.getPrice().getValue() * 100 / valueAnHourAgo));
 
+        if (item.isPlayerOnly()) lore = Lang.get().message(Message.GUI_BAZAAR_ORDER_ITEM_LORE);
         String itemLore = lore
-                .replace("[PRICE]", Formatter.format(item.getCurrency(), item.isPlayerOnly() ? item.buyPrice(1) : item.getPrice().getValue(), Style.ROUND_BASIC))
-                .replace("[SELL-PRICE]", Formatter.format(item.getCurrency(), item.sellPrice(1), Style.ROUND_BASIC))
-                .replace("[BUY-PRICE]", Formatter.format(item.getCurrency(), item.buyPrice(1), Style.ROUND_BASIC));
+                .replace("[PRICE]", item.isPlayerOnly() ? "Player orders" : Formatter.format(item.getCurrency(), item.getPrice().getValue(), Style.ROUND_BASIC))
+                .replace("[SELL-PRICE]", item.isPlayerOnly() && playerSell == 0 ? "No matching orders" : Formatter.format(item.getCurrency(), item.isPlayerOnly() ? playerSell : item.sellPrice(1), Style.ROUND_BASIC))
+                .replace("[BUY-PRICE]", item.isPlayerOnly() && playerBuy == 0 ? "No matching orders" : Formatter.format(item.getCurrency(), item.isPlayerOnly() ? playerBuy : item.buyPrice(1), Style.ROUND_BASIC));
 
         String changeFormatted;
 
@@ -255,15 +356,12 @@ public class MarketMenuManager {
 
         List<String> itemLoreLines = new ArrayList<>(legacyLines(itemLore));
         if (item.isPlayerOnly()) {
-            itemLoreLines.add(legacy("<yellow>Player orders only — no admin stock</yellow>"));
-            itemLoreLines.add(legacy("<gray>Buy/sell buttons require a matching order.</gray>"));
-            itemLoreLines.add(legacy("<gray>/market order buy|sell <good> <amount> <price></gray>"));
-            itemLoreLines.add(legacy("<gray>/market claim to collect trades.</gray>"));
-        }
-
-        itemLoreLines.add(legacy(Lang.get().message(Message.GUI_STOCK_DISPLAY)
+            itemLoreLines.add(legacy("<yellow>Player orders only — no generated stock</yellow>"));
+            itemLoreLines.add(legacy("<gray>For sale: " + book.sellVolume() + " | Wanted: " + book.buyVolume() + "</gray>"));
+            itemLoreLines.add(legacy("<green>Best ask: " + (book.bestAskCents() == 0 ? "None" : Formatter.format(item.getCurrency(), book.bestAskCents() / 100.0, Style.ROUND_BASIC)) + "</green>"));
+            itemLoreLines.add(legacy("<red>Best bid: " + (book.bestBidCents() == 0 ? "None" : Formatter.format(item.getCurrency(), book.bestBidCents() / 100.0, Style.ROUND_BASIC)) + "</red>"));
+        } else itemLoreLines.add(legacy(Lang.get().message(Message.GUI_STOCK_DISPLAY)
                 .replace("[STOCK]", String.valueOf(item.getStock()))));
-        if (item.isPlayerOnly()) itemLoreLines.add(legacy("<gray>Buy-order volume: " + OrderBook.get().available(item, false) + "</gray>"));
 
         return itemLoreLines;
     }

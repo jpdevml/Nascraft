@@ -17,6 +17,7 @@ public class Lang {
     private YamlConfiguration lang;
     /** Keys shipped in the jar for the selected language; used to fill in any the on-disk file is missing. */
     private YamlConfiguration defaults;
+    private YamlConfiguration englishDefaults;
 
     private final MiniMessage miniMessage;
     private final BukkitAudiences audience;
@@ -47,6 +48,7 @@ public class Lang {
 
         lang = YamlConfiguration.loadConfiguration(language);
         defaults = loadBundled("langs/" + Config.getInstance().getSelectedLanguage() + ".yml");
+        englishDefaults = loadBundled("langs/en_US.yml");
 
         this.audience = Nascraft.getInstance().adventure();
         this.miniMessage = MiniMessage.miniMessage();
@@ -64,6 +66,7 @@ public class Lang {
 
         lang = YamlConfiguration.loadConfiguration(language);
         defaults = loadBundled("langs/" + Config.getInstance().getSelectedLanguage() + ".yml");
+        englishDefaults = loadBundled("langs/en_US.yml");
         Formatter.setSeparator(Separator.valueOf(message(Message.SEPARATOR).toUpperCase()));
     }
 
@@ -92,6 +95,7 @@ public class Lang {
         String key = msg.name().toLowerCase();
         String value = this.lang.getString(key);
         if (value == null && defaults != null) value = defaults.getString(key);
+        if (value == null && englishDefaults != null) value = englishDefaults.getString(key);
         return value;
     }
 

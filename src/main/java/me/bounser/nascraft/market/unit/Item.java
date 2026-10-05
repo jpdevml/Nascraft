@@ -184,7 +184,7 @@ public class Item {
             if (event.isCancelled()) return 0;
             double result = OrderBook.get().fill(buyer, this, amount, true, false);
             if (result > 0) completedPlayerTrade(buyer, amount, result, true);
-            if (feedback && result > 0) buyer.sendMessage("Purchased " + amount + " " + getName() + " for " + result + ". Use /market claim to collect.");
+            if (feedback && result > 0) buyer.sendMessage("Purchased " + amount + " " + getName() + " for " + result + ". Collect it in Bazaar > Claims.");
             else if (feedback && result == -2) buyer.sendMessage("Settlement uncertain. Contact an administrator; do not retry until reconciled.");
             else if (feedback) buyer.sendMessage("No matching sell orders or payment failed.");
             return Math.max(0, result);
@@ -306,7 +306,7 @@ public class Item {
             if (event.isCancelled()) return -1;
             double result = OrderBook.get().fill(seller, this, amount, false, escrowed);
             if (result > 0) completedPlayerTrade(seller, amount, result, false);
-            if (feedback && result > 0) seller.sendMessage("Sold " + amount + " " + getName() + " for " + result + ". Use /market claim to collect.");
+            if (feedback && result > 0) seller.sendMessage("Sold " + amount + " " + getName() + " for " + result + ". Collect it in Bazaar > Claims.");
             else if (feedback && result == -2) seller.sendMessage("Settlement uncertain. Contact an administrator; do not retry until reconciled.");
             else if (feedback) seller.sendMessage("No matching buy orders or escrow failed.");
             return result;

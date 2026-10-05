@@ -16,4 +16,9 @@ public class OrderBookPriceTest {
         assertThrows(ArithmeticException.class, () -> OrderBook.cents("99999999999999999999999"));
         assertThrows(NumberFormatException.class, () -> OrderBook.cents("not a price"));
     }
+
+    @Test public void instantFillsUseBestPriceThenOldestOrder() {
+        assertEquals(" ORDER BY price_cents ASC, id ASC", OrderBook.instantFillOrder(true));
+        assertEquals(" ORDER BY price_cents DESC, id ASC", OrderBook.instantFillOrder(false));
+    }
 }
