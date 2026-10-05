@@ -127,6 +127,20 @@ public final class OrderBook {
         }
     }
 
+    /** Serialize matching across JVMs. The mutex lives in the same transaction as order mutations. */
+    private void lockBook(Connection db, String market, String good) throws SQLException {
+        if (!(me.bounser.nascraft.database.DatabaseManager.get().getDatabase()
+                instanceof me.bounser.nascraft.database.mysql.MariaDB)) return;
+        db.setAutoCommit(false);
+        try (PreparedStatement insert = db.prepareStatement("INSERT IGNORE INTO market_mutex(market_id,identifier) VALUES(?,?)")) {
+            insert.setString(1, market); insert.setString(2, good); insert.executeUpdate();
+        }
+        try (PreparedStatement lock = db.prepareStatement("SELECT identifier FROM market_mutex WHERE market_id=? AND identifier=? FOR UPDATE")) {
+            lock.setString(1, market); lock.setString(2, good);
+            try (ResultSet row = lock.executeQuery()) { if (!row.next()) throw new SQLException("Missing order-book mutex"); }
+        }
+    }
+
     /** Price in cents, positive. Orders that cross the current best quote must be filled instantly instead. */
     public synchronized long place(Player player, Item item, int amount, long price, boolean buy) {
         valid(item, amount);
@@ -136,6 +150,7 @@ public final class OrderBook {
         boolean escrowed = false;
         boolean inserting = false;
         try (Connection db = DatabaseExecutor.getInstance().getConnection()) {
+            lockBook(db, item.getPort().getId(), item.getIdentifier());
             List<Order> opposite = matches(db, item, buy, 0);
             if (!opposite.isEmpty() && (buy ? price >= opposite.get(0).price : price <= opposite.get(0).price)) return -1;
             long total = product(price, amount);
@@ -149,8 +164,16 @@ public final class OrderBook {
                 sql.setLong(5, price); sql.setInt(6, amount); sql.setString(7, encode(item.getItemStack()));
                 inserting = true;
                 sql.executeUpdate();
-                try (Statement idQuery = db.createStatement(); ResultSet keys = idQuery.executeQuery("SELECT last_insert_rowid()")) {
-                    if (keys.next()) return keys.getLong(1);
+                // sqlite-jdbc 3.43 does not implement getGeneratedKeys().
+                boolean maria = me.bounser.nascraft.database.DatabaseManager.get().getDatabase()
+                        instanceof me.bounser.nascraft.database.mysql.MariaDB;
+                try (Statement idQuery = db.createStatement();
+                     ResultSet keys = idQuery.executeQuery(maria ? "SELECT LAST_INSERT_ID()" : "SELECT last_insert_rowid()")) {
+                    if (keys.next()) {
+                        long id = keys.getLong(1);
+                        if (!db.getAutoCommit()) db.commit();
+                        return id;
+                    }
                 }
                 // Insert may have succeeded; do not refund escrow on an uncertain outcome.
                 throw new SQLException("Order inserted but ID lookup failed; reconcile escrow before refunding");
@@ -176,6 +199,7 @@ public final class OrderBook {
         boolean paid = false;
         boolean mutationStarted = false;
         try (Connection db = DatabaseExecutor.getInstance().getConnection()) {
+            lockBook(db, item.getPort().getId(), item.getIdentifier());
             List<Order> orders = matches(db, item, buy, 0);
             List<Map.Entry<Order, Integer>> fills = new ArrayList<>();
             int left = amount; long total = 0;
@@ -236,7 +260,17 @@ public final class OrderBook {
         busy = true;
         try (Connection db = DatabaseExecutor.getInstance().getConnection()) {
             db.setAutoCommit(false);
-            try (PreparedStatement sql = db.prepareStatement("SELECT side, price_cents, remaining, item_data FROM bazaar_orders WHERE id=? AND owner=? AND remaining>0")) {
+            // Lock the order row as well as the book: competing fill/cancel must serialize.
+            try (PreparedStatement sql = db.prepareStatement("SELECT market_id, identifier FROM bazaar_orders WHERE id=? AND owner=? AND remaining>0")) {
+                sql.setLong(1, id); sql.setString(2, player.getUniqueId().toString());
+                try (ResultSet row = sql.executeQuery()) {
+                    if (!row.next()) return false;
+                    lockBook(db, row.getString(1), row.getString(2));
+                }
+            }
+            String lockSuffix = me.bounser.nascraft.database.DatabaseManager.get().getDatabase()
+                    instanceof me.bounser.nascraft.database.mysql.MariaDB ? " FOR UPDATE" : "";
+            try (PreparedStatement sql = db.prepareStatement("SELECT side, price_cents, remaining, item_data FROM bazaar_orders WHERE id=? AND owner=? AND remaining>0" + lockSuffix)) {
                 sql.setLong(1, id); sql.setString(2, player.getUniqueId().toString());
                 try (ResultSet row = sql.executeQuery()) {
                     if (!row.next()) return false;

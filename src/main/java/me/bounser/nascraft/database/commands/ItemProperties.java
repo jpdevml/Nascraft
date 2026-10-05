@@ -22,7 +22,7 @@ public class ItemProperties {
 
         item = resolveParent(item);
 
-        String sql = "INSERT OR REPLACE INTO port_items (port_id, identifier, lastprice, lowest, highest, price_stock, stock, taxes) VALUES (?,?,?,?,?,?,?,?);";
+        String sql = "REPLACE INTO port_items (port_id, identifier, lastprice, lowest, highest, price_stock, stock, taxes) VALUES (?,?,?,?,?,?,?,?);";
 
         try (PreparedStatement prep = connection.prepareStatement(sql)) {
             prep.setString(1, item.getPort().getId());

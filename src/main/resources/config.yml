@@ -8,6 +8,17 @@
 language: 'en_US'
 
 database:
+  # sqlite (one server) or mysql (shared MariaDB for a network). A failed
+  # mysql connection NEVER falls back to a local database.
+  type: sqlite
+  mysql:
+    host: localhost
+    port: 3306
+    name: nascraft
+    username: nascraft
+    password: 'change-me'
+    ssl: false
+    pool-size: 8
   # How many days should logs of trades last in the database?
   # Use -1 to disable (keep all trades logged).
   days-until-history-removed: 60

@@ -10,7 +10,7 @@ public class DiscordLink {
 
     public static void saveLink(Connection connection, String userId, UUID uuid, String nickname) throws SQLException {
 
-        String sql = "INSERT OR REPLACE INTO discord_links (userid, uuid, nickname) VALUES (?,?,?);";
+        String sql = "REPLACE INTO discord_links (userid, uuid, nickname) VALUES (?,?,?);";
 
         try (PreparedStatement prep = connection.prepareStatement(sql)) {
             prep.setString(1, userId);

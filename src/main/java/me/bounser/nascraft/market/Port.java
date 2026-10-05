@@ -132,6 +132,11 @@ public class Port {
 
     /** Adds each parent good's configured restock amount to its stock. */
     public void restock() {
+        if (me.bounser.nascraft.database.DatabaseManager.get().getDatabase()
+                instanceof me.bounser.nascraft.database.mysql.MariaDB shared) {
+            shared.restock(this);
+            return;
+        }
         for (Item item : getParentItems())
             if (!item.isPlayerOnly()) item.addStock(item.getRestockAmount());
     }

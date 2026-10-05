@@ -93,7 +93,12 @@ public class NascraftCommand extends Command {
         sender.sendMessage(PREFIX + ChatColor.GRAY + "Reloading...");
 
         // Config#reload also reloads the lang file and rebuilds all ports.
-        Config.getInstance().reload();
+        try {
+            Config.getInstance().reload();
+        } catch (RuntimeException ex) {
+            sender.sendMessage(PREFIX + ChatColor.RED + "Reload failed: " + ex.getMessage());
+            return;
+        }
 
         sender.sendMessage(PREFIX + ChatColor.GRAY + "Reloaded! " +
                 MarketManager.getInstance().getPorts().size() + " ports loaded. Language: " +
@@ -113,8 +118,12 @@ public class NascraftCommand extends Command {
     private void handleResume(CommandSender sender) {
 
         if (!MarketManager.getInstance().getActive()) {
-            MarketManager.getInstance().resume();
-            sender.sendMessage(PREFIX + ChatColor.GRAY + "Trading resumed.");
+            try {
+                MarketManager.getInstance().resume();
+                sender.sendMessage(PREFIX + ChatColor.GRAY + "Trading resumed.");
+            } catch (RuntimeException ex) {
+                sender.sendMessage(PREFIX + ChatColor.RED + "Cannot resume while the database is unavailable: " + ex.getMessage());
+            }
         } else {
             sender.sendMessage(PREFIX + ChatColor.GRAY + "Trading is already active!");
         }

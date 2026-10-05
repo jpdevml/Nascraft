@@ -2,6 +2,8 @@ name: Nascraft
 version: '${project.version}'
 main: me.bounser.nascraft.Nascraft
 api-version: '1.21'
-softdepend: [ Vault, DiscordSRV ]
+# MariaDB is a JDBC backend, not a Bukkit plugin; database selection is in config.yml.
+depend: [ Vault ]
+softdepend: [ DiscordSRV ]
 authors: [ bounser, jamesperreaultdev, Error11O ]
 description: Port-based local markets and trading

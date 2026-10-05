@@ -57,7 +57,22 @@ public final class Nascraft extends JavaPlugin {
 
         setupPermissions();
 
-        MarketManager.getInstance();
+        try {
+            DatabaseManager.get();
+        } catch (Exception ex) {
+            getLogger().severe("Database unavailable; refusing to open markets: " + ex);
+            DatabaseExecutor.shutdownIfPresent();
+            Bukkit.getPluginManager().disablePlugin(this);
+            return;
+        }
+
+        try {
+            MarketManager.getInstance();
+        } catch (Exception ex) {
+            getLogger().severe("Could not load markets; refusing to trade: " + ex);
+            Bukkit.getPluginManager().disablePlugin(this);
+            return;
+        }
 
         // MarketManager disables the plugin when ports.yml has no valid ports.
         if (!isEnabled()) return;

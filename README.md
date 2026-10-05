@@ -21,8 +21,9 @@ single item market into **port-based local markets** plus an optional
 - The global catalog is selected under `global-market.goods` in `ports.yml`.
   Goods can be `managed` (existing stock simulation) or `player-only` (escrowed
   player orders; no generated stock). Vanilla `material` items remain supported.
-- **Money is handled through Vault.** Managed state persists in SQLite
-  (async + HikariCP); player-backed orders and claims are written synchronously.
+- **Money is handled through Vault.** Storage is SQLite (single server) or
+  MariaDB (`database.type: mysql`) for a shared network; player-backed orders
+  and claims are written synchronously. See [network deployment](DOCS.md#shared-mariadb-network).
 - Optional **Discord integration** (JDA): account linking, a trade-log
   channel showing which port each trade happened at, and informational
   `/ports`, `/port`, `/balance` slash commands. Remote trading from Discord is
@@ -47,7 +48,7 @@ Permissions: `nascraft.market` (trade), `nascraft.admin` (admin),
 ## Removed from upstream
 
 Web UI, AdvancedGUI layouts, portfolios, margin loans, price
-alerts, sell wands, CPI/flows charts, custom command currencies, MySQL/Redis.
+alerts, sell wands, CPI/flows charts, custom command currencies, Redis.
 
 ## Building
 

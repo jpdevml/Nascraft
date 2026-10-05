@@ -19,7 +19,8 @@ public class MarketManager {
     private volatile Map<String, Port> ports = new LinkedHashMap<>();
     private volatile Port globalMarket;
 
-    private boolean active = true;
+    private volatile boolean active = true;
+    private volatile boolean localHalt; // do not resume an uncertain local settlement from a remote poll
 
     private int operationsLastHour = 0;
 
@@ -43,6 +44,8 @@ public class MarketManager {
         ignoredKeys = Config.getInstance().getIgnoredKeys();
 
         active = !Config.getInstance().isMarketClosed();
+        if (DatabaseManager.get().getDatabase() instanceof me.bounser.nascraft.database.mysql.MariaDB maria)
+            active &= !maria.isPaused();
 
         TasksManager.getInstance();
     }
@@ -97,8 +100,10 @@ public class MarketManager {
         // Queue a save (it snapshots the items at call time) and wait for it
         // to land before re-reading item state from the database.
         DatabaseManager.get().getDatabase().saveEverything();
-        if (!DatabaseExecutor.getInstance().flush(15))
-            Nascraft.getInstance().getLogger().severe("Timed out waiting for the database to flush before reload; item state may be stale.");
+        if (!DatabaseExecutor.getInstance().flush(15)) {
+            stop();
+            throw new IllegalStateException("Timed out waiting for database writes; reload aborted and trading stopped");
+        }
 
         TasksManager.getInstance().cancelRestockTasks();
         MarketMenuManager.getInstance().closeAllMenus();
@@ -133,8 +138,22 @@ public class MarketManager {
         return null;
     }
 
-    public void stop() { active = false; }
-    public void resume() { active = true; }
+    public void stopLocally() { localHalt = true; active = false; }
+    public void stop() {
+        stopLocally();
+        if (DatabaseManager.get().getDatabase() instanceof me.bounser.nascraft.database.mysql.MariaDB maria) {
+            try { maria.setPaused(true); }
+            catch (RuntimeException ex) { Nascraft.getInstance().getLogger().severe("Cannot signal network-wide trading pause: " + ex); }
+        }
+    }
+    public void resume() {
+        if (DatabaseManager.get().getDatabase() instanceof me.bounser.nascraft.database.mysql.MariaDB maria)
+            maria.setPaused(false);
+        localHalt = false;
+        active = true;
+    }
+    /** Only called by the shared-status poller; never writes the DB from a poll. */
+    public void syncPaused(boolean paused) { active = !paused && !localHalt && !Config.getInstance().isMarketClosed(); }
 
     public boolean getActive() { return active; }
 

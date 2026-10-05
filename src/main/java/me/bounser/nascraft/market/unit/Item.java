@@ -189,6 +189,18 @@ public class Item {
             else if (feedback) buyer.sendMessage("No matching sell orders or payment failed.");
             return Math.max(0, result);
         }
+        if (DatabaseManager.get().getDatabase() instanceof me.bounser.nascraft.database.mysql.MariaDB shared) {
+            double result = shared.trade(this, () -> buyManaged(amount, uuid, feedback));
+            if (result == -2 && feedback) {
+                Player buyer = Bukkit.getPlayer(uuid);
+                if (buyer != null) buyer.sendMessage("Trade outcome uncertain. Trading stopped; contact an administrator before retrying.");
+            }
+            return Math.max(0, result);
+        }
+        return buyManaged(amount, uuid, feedback);
+    }
+
+    private double buyManaged(int amount, UUID uuid, boolean feedback) {
         Player player = Bukkit.getPlayer(uuid);
         if (player == null || !feedback) return 0;
         OfflinePlayer offlinePlayer = Bukkit.getOfflinePlayer(uuid);
@@ -299,6 +311,12 @@ public class Item {
             else if (feedback) seller.sendMessage("No matching buy orders or escrow failed.");
             return result;
         }
+        if (DatabaseManager.get().getDatabase() instanceof me.bounser.nascraft.database.mysql.MariaDB shared)
+            return shared.trade(this, () -> sellManaged(amount, uuid, feedback, escrowed));
+        return sellManaged(amount, uuid, feedback, escrowed);
+    }
+
+    private double sellManaged(int amount, UUID uuid, boolean feedback, boolean escrowed) {
         Player player = Bukkit.getPlayer(uuid);
         if (player == null) return -1;
         OfflinePlayer offlinePlayer = Bukkit.getOfflinePlayer(uuid);
@@ -346,6 +364,8 @@ public class Item {
             // the inventory here could duplicate items AND money; quarantine instead.
             Nascraft.getInstance().getLogger().severe("Managed sale payout uncertain for " + uuid + ": "
                     + amount + "x " + identifier + " at " + port.getId() + ". Reconcile before refunding.");
+            if (DatabaseManager.get().getDatabase() instanceof me.bounser.nascraft.database.mysql.MariaDB)
+                MarketManager.getInstance().stop();
             if (feedback) player.sendMessage("Payout uncertain; contact an administrator before retrying.");
             return -2;
         }

@@ -80,11 +80,11 @@ the material name as the identifier. Bukkit serialized `item-stack` and
 `material` + `model-data` + `display-name` remain supported. Being in `items.yml`
 alone does not list a good: put it under a port or `global-market.goods`.
 
-**Safety boundary:** SQLite, Vault, and Bukkit inventories cannot share one
+**Safety boundary:** SQL, Vault, and Bukkit inventories cannot share one
 atomic transaction. On ambiguous external payouts, `bazaar_claims` records
 remain `DELIVERING` for manual reconciliation and must not be blindly retried.
 Lossless exactly-once transfers require a transactional/idempotent economy and
-inventory backend. Back up `data/sqlite.db` before reconciling claims.
+inventory backend. Back up the active database before reconciling claims.
 
 Before enabling player-only goods on a production server, test on a staging
 server with the real Vault provider: simultaneous buyers, repeat-clicking, order
@@ -92,6 +92,28 @@ partial fills/cancellation, inventory-full claims, reload/disconnect while the
 sell GUI holds goods, failed deposits, and a forced database error. Verify that
 `bazaar_orders.remaining`, `bazaar_claims`, and `bazaar_fills` reconcile; never
 reset a `DELIVERING` claim without checking the player's actual balance/items.
+
+## Shared MariaDB network
+
+Set `database.type: mysql` and fill in `database.mysql` in `config.yml` on **every** server. The bundled MariaDB JDBC driver connects to MariaDB over TCP. The `plugin.yml` dependency on Vault is static; Bukkit cannot declare a conditional dependency based on storage mode, and MariaDB is not a Bukkit plugin. The plugin refuses to enable if the selected database is unreachable. Changing the backend or its connection settings requires a restart, not `/nascraft reload`. Never put the DB password into version control; restrict DB access and enable TLS for untrusted networks.
+
+Every server must use the **same** `ports.yml`, `items.yml`, Vault economy and shared player balances/inventories (and compatible item serialization). Database sharing does not itself synchronize Vault balances or Minecraft inventories. Run all servers on the same Nascraft version; IDs must agree across servers. Managed trades lock their item rows before checking price/stock; order placement and fills lock the book in MariaDB. A single database schedule elects the winner for automated restocks and noise. Display state refreshes approximately every 10 seconds; a displayed quote may change before the trade is committed. The five-minute snapshot writer is disabled in MySQL mode, so another server cannot overwrite committed state at shutdown.
+
+**Migration from SQLite:** Stop *all* Nascraft instances. Back up `plugins/Nascraft/data/sqlite.db`, player inventories and economy balances. Create a **new, empty** MariaDB database and a user with schema creation/read/write privileges. Run the offline importer from the plugin jar (before setting `database.type: mysql`):
+
+```bash
+export NASCRAFT_MIGRATION_PASSWORD='your-db-password'
+java -cp target/Nascraft-2.0.0-ports.jar \
+  me.bounser.nascraft.database.mysql.SqliteImporter \
+  plugins/Nascraft/data/sqlite.db \
+  jdbc:mariadb://db.example.com:3306/nascraft nascraft
+```
+
+The importer refuses an already populated target, copies IDs (including order and claim IDs) and validates per-table row counts; it does not touch the SQLite source. Confirm claim statuses, order quantities and stock against the backup, then switch *all* servers to MySQL mode. Do not start SQLite-mode and MySQL-mode servers simultaneously against the same economy. Keep backups for rollback; reverting after new MariaDB trades requires reconciling them, not merely changing the config.
+
+**Operational limits:** Failed/uncertain Vault or inventory transfers still require manual reconciliation. A SQL transaction cannot make external money/items exactly-once; in particular do not automatically retry `DELIVERING` claims. Database errors during managed settlement halt trading locally and attempt to pause the network; if the database itself is unreachable, stop other servers manually until reconciled. A shared pause is polled every two seconds; the server that reported an uncertain settlement remains stopped until explicitly resumed there. SQL queries and the shared-state refresh currently run on the Bukkit main thread and can stall a tick during DB latency/outage; deploy a low-latency MariaDB server and monitor its availability. Historical volume sampling follows the elected server's in-memory counters, so it does not yet represent total network volume. `/nascraft stop`/`resume` updates the network pause, subject to polling delay. Do not use this mode for a network requiring cross-server exact-once inventory/economy settlement or network-wide volume charts without implementing those backends first.
+
+Testing: `mvn test` runs SQLite regression tests. With a dedicated empty MariaDB test database, set `NASCRAFT_TEST_MARIADB_URL`, `NASCRAFT_TEST_MARIADB_USER`, and `NASCRAFT_TEST_MARIADB_PASSWORD`, then run `mvn test` for schema/import/lock tests. Stage real two-server buy/sell, simultaneous fills/cancellations/claims, reload, restocks, and outage/ambiguous Vault payouts before production.
 
 ## Discord integration
 

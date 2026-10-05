@@ -24,7 +24,7 @@ public class UserNames {
 
     public static void saveOrUpdateNick(Connection connection, UUID uuid, String name) throws SQLException {
 
-        String sql = "INSERT OR REPLACE INTO user_names (uuid, name) VALUES (?,?);";
+        String sql = "REPLACE INTO user_names (uuid, name) VALUES (?,?);";
 
         try (PreparedStatement prep = connection.prepareStatement(sql)) {
             prep.setString(1, uuid.toString());

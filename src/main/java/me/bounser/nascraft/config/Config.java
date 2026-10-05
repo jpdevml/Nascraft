@@ -53,7 +53,13 @@ public class Config {
 
     public void reload() {
 
-        config = YamlConfiguration.loadConfiguration(new File(main.getDataFolder(), "config.yml"));
+        FileConfiguration updated = YamlConfiguration.loadConfiguration(new File(main.getDataFolder(), "config.yml"));
+        String newType = updated.getString("database.type", "sqlite").trim().toLowerCase(Locale.ROOT);
+        if (!newType.equals(getDatabaseType()) || !Objects.equals(
+                updated.getConfigurationSection("database.mysql") == null ? null : updated.getConfigurationSection("database.mysql").getValues(true),
+                config.getConfigurationSection("database.mysql") == null ? null : config.getConfigurationSection("database.mysql").getValues(true)))
+            throw new IllegalStateException("Changing database backend/connection settings requires a full restart");
+        config = updated;
 
         items = setupFile("items.yml");
         ports = setupFile("ports.yml");
@@ -69,6 +75,15 @@ public class Config {
     public List<String> getIgnoredKeys() {
         return config.getStringList("ignored-keys");
     }
+
+    public String getDatabaseType() { return config.getString("database.type", "sqlite").trim().toLowerCase(Locale.ROOT); }
+    public String getMysqlHost() { return config.getString("database.mysql.host", "localhost"); }
+    public int getMysqlPort() { return config.getInt("database.mysql.port", 3306); }
+    public String getMysqlName() { return config.getString("database.mysql.name", "nascraft"); }
+    public String getMysqlUser() { return config.getString("database.mysql.username", "nascraft"); }
+    public String getMysqlPassword() { return config.getString("database.mysql.password", ""); }
+    public boolean getMysqlSsl() { return config.getBoolean("database.mysql.ssl", false); }
+    public int getMysqlPoolSize() { return config.getInt("database.mysql.pool-size", 8); }
 
     public int getDatabasePurgeDays() {
         return config.getInt("database.days-until-history-removed", 60);

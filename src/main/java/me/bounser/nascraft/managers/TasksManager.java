@@ -51,8 +51,26 @@ public class TasksManager {
         hourlyTask();
         saveInstants();
         scheduleRestockTasks();
+        if (shared() != null) {
+            Bukkit.getScheduler().runTaskTimer(Nascraft.getInstance(), () -> {
+                try { MarketManager.getInstance().syncPaused(shared().isPaused()); }
+                catch (RuntimeException ex) {
+                    Nascraft.getInstance().getLogger().severe("Shared trading status unavailable: " + ex);
+                    MarketManager.getInstance().stopLocally();
+                }
+            }, 40L, 40L);
+            Bukkit.getScheduler().runTaskTimer(Nascraft.getInstance(), () -> {
+                if (!MarketManager.getInstance().getActive()) return;
+                for (Item item : allParentItems()) if (!item.isPlayerOnly()) shared().refresh(item);
+            }, 200L, 200L);
+        }
 
         DatabaseManager.get().getDatabase().purgeHistory();
+    }
+
+    private me.bounser.nascraft.database.mysql.MariaDB shared() {
+        var database = DatabaseManager.get().getDatabase();
+        return database instanceof me.bounser.nascraft.database.mysql.MariaDB maria ? maria : null;
     }
 
     private List<Item> allParentItems() {
@@ -96,8 +114,14 @@ public class TasksManager {
 
             if (!Config.getInstance().getPriceNoise()) return;
 
+            var maria = shared();
+            if (maria != null && (!MarketManager.getInstance().getActive()
+                    || !maria.due("noise", Math.max(1, Config.getInstance().getNoiseTime())))) return;
             for (Item item : allParentItems())
-                if (!item.isPlayerOnly()) item.getPrice().applyNoise();
+                if (!item.isPlayerOnly()) {
+                    if (maria != null) maria.noise(item);
+                    else item.getPrice().applyNoise();
+                }
 
         }, (long) delay * ticksPerSecond, (long) Config.getInstance().getNoiseTime() * ticksPerSecond);
     }
@@ -113,8 +137,11 @@ public class TasksManager {
 
         Bukkit.getScheduler().runTaskTimer(Nascraft.getInstance(), () -> {
 
+            var maria = shared();
+            if (maria != null && (!MarketManager.getInstance().getActive() || !maria.due("history", 60))) return;
             for (Item item : allParentItems()) {
                 if (item.isPlayerOnly()) continue;
+                if (maria != null) maria.refresh(item);
 
                 item.getItemStats().addInstant(new Instant(
                         LocalDateTime.now(),
@@ -187,9 +214,12 @@ public class TasksManager {
                     Port currentPort = MarketManager.getInstance().getPort(port.getId());
                     if (currentPort == null) return;
 
-                    currentPort.restock();
+                    var maria = shared();
+                    boolean shouldRestock = maria == null || (MarketManager.getInstance().getActive()
+                            && maria.due("restock:" + currentPort.getId(), (long) minutes * 60));
+                    if (shouldRestock) currentPort.restock();
 
-                    if (Config.getInstance().getRestockAnnounceEnabled())
+                    if (shouldRestock && Config.getInstance().getRestockAnnounceEnabled())
                         announceRestock(currentPort);
 
                     scheduleNextRestock(currentPort);

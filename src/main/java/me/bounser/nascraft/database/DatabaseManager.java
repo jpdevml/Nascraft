@@ -1,6 +1,8 @@
 package me.bounser.nascraft.database;
 
 import me.bounser.nascraft.database.sqlite.SQLite;
+import me.bounser.nascraft.database.mysql.MariaDB;
+import me.bounser.nascraft.config.Config;
 
 public class DatabaseManager {
 
@@ -14,7 +16,12 @@ public class DatabaseManager {
     public static DatabaseManager getIfPresent() { return instance; }
 
     public DatabaseManager() {
-        database = SQLite.getInstance();
+        String type = Config.getInstance().getDatabaseType();
+        database = switch (type) {
+            case "sqlite" -> SQLite.getInstance();
+            case "mysql", "mariadb" -> new MariaDB();
+            default -> throw new IllegalArgumentException("Unsupported database.type: " + type);
+        };
         database.connect();
     }
 

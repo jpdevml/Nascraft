@@ -32,7 +32,7 @@ public class SQLite implements Database {
 
     private static SQLite instance;
 
-    private boolean connected = false;
+    protected boolean connected = false;
 
     public static SQLite getInstance() { return instance == null ? instance = new SQLite() : instance; }
 
@@ -141,7 +141,7 @@ public class SQLite implements Database {
                             "name TEXT");
 
         } catch (SQLException e) {
-            Nascraft.getInstance().getLogger().warning("Failed to create tables: " + e.getMessage());
+            throw new IllegalStateException("Failed to create SQLite tables", e);
         }
     }
 

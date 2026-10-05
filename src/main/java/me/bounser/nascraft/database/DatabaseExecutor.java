@@ -13,12 +13,17 @@ import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 
 import me.bounser.nascraft.Nascraft;
+import me.bounser.nascraft.config.Config;
 
 import java.io.File;
 
 public class DatabaseExecutor {
 
     private static DatabaseExecutor instance;
+
+    public static void shutdownIfPresent() {
+        if (instance != null) instance.shutdown();
+    }
 
     private final ExecutorService executor;
     private final HikariDataSource dataSource;
@@ -44,22 +49,32 @@ public class DatabaseExecutor {
         this.transactionIds = new ConcurrentHashMap<>();
         this.idCounter = new AtomicLong(0);
 
-        File dataDir = new File(Nascraft.getInstance().getDataFolder(), "data");
-        if (!dataDir.exists()) {
-            dataDir.mkdirs();
-        }
-
-        String path = dataDir.getPath() + "/sqlite.db";
-
+        Config settings = Config.getInstance();
         HikariConfig config = new HikariConfig();
-        config.setJdbcUrl("jdbc:sqlite:" + path);
-        config.setMaximumPoolSize(2);
+        if (settings.getDatabaseType().equals("sqlite")) {
+            File dataDir = new File(Nascraft.getInstance().getDataFolder(), "data");
+            if (!dataDir.exists() && !dataDir.mkdirs()) throw new IllegalStateException("Could not create database directory");
+            config.setJdbcUrl("jdbc:sqlite:" + new File(dataDir, "sqlite.db"));
+            config.setMaximumPoolSize(2);
+            config.addDataSourceProperty("journal_mode", "WAL");
+            config.addDataSourceProperty("busy_timeout", "30000");
+        } else {
+            String host = settings.getMysqlHost(), name = settings.getMysqlName();
+            if (!host.matches("[a-zA-Z0-9.:-]+") || !name.matches("[a-zA-Z0-9_]+")
+                    || settings.getMysqlPort() < 1 || settings.getMysqlPort() > 65535)
+                throw new IllegalArgumentException("Invalid database.mysql host, port or name");
+            config.setJdbcUrl("jdbc:mariadb://" + host + ":" + settings.getMysqlPort() + "/" + name
+                    + "?sslMode=" + (settings.getMysqlSsl() ? "verify-full" : "disable"));
+            config.setUsername(settings.getMysqlUser());
+            config.setPassword(settings.getMysqlPassword());
+            config.setMaximumPoolSize(Math.max(2, Math.min(32, settings.getMysqlPoolSize())));
+            config.setConnectionInitSql("SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED");
+        }
         config.setMinimumIdle(1);
-        config.setConnectionTimeout(30000);
+        config.setConnectionTimeout(5000);
+        config.setValidationTimeout(3000);
         config.setIdleTimeout(600000);
         config.setMaxLifetime(1800000);
-        config.addDataSourceProperty("journal_mode", "WAL");
-        config.addDataSourceProperty("busy_timeout", "30000");
 
         this.dataSource = new HikariDataSource(config);
     }
@@ -132,7 +147,10 @@ public class DatabaseExecutor {
                         }
                     }
                 } else {
-                    Nascraft.getInstance().getLogger().warning("DB error: " + msg);
+                    Nascraft.getInstance().getLogger().severe("DB error: " + msg);
+                    if (!Config.getInstance().getDatabaseType().equals("sqlite")
+                            && me.bounser.nascraft.market.MarketManager.getInstanceIfPresent() != null)
+                        me.bounser.nascraft.market.MarketManager.getInstanceIfPresent().stop();
                     return;
                 }
             }
