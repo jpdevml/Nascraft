@@ -47,6 +47,25 @@ price-options:
     intensity-multiplier: 1
     # Time in seconds between noise applications.
     time: 60
+  # Stock-market style moves (replaces the noise above while enabled). Each tick (noise.time) a good's
+  # price drifts back towards fair value, gets a random kick of `volatility` (log, per tick) and follows
+  # a trend (bull run / slump / steady, 30-180 ticks). News events (shortages, gluts) jump it and fade
+  # over a few hours. Trades push it: `depth` units bought move it up 1%.
+  # Per good (items.yml or ports.yml): volatility, reversion, depth. volatility: 0 keeps a fixed price.
+  market:
+    enabled: true
+    default-volatility: 0.006
+    default-reversion: 0.02
+    default-depth: 128
+    # Chance per good per tick of a news event, and how big it is (fraction of price).
+    event-chance: 0.002
+    event-size: { min: 0.12, max: 0.35 }
+    # Share of trend rolls that are bull or bear (the rest are steady).
+    trend-chance: 0.6
+    # Furthest the market can take a price from its supply-curve value (log; 0.9 = x0.4 to x2.5).
+    max-swing: 0.9
+    # Announce news headlines in chat.
+    broadcast-news: true
   # The default elasticity applies to all goods unless overridden in items.yml or ports.yml.
   default-elasticity: 1
   elasticity-multiplier: 1
@@ -81,6 +100,20 @@ bazaar:
     click: UI_BUTTON_CLICK
     success: ENTITY_PLAYER_LEVELUP
     error: ENTITY_VILLAGER_NO
+
+# Shares: cash-settled positions in managed goods (/market shares, the Portfolio page).
+shares:
+  enabled: true
+  # Fee on each buy and sell (0.015 = 1.5%).
+  fee: 0.015
+  max-per-good: 2000
+
+# The exchange GUI as CrusalisScreens pages (needs CrusalisScreens + PlaceholderAPI; falls back to
+# the chest menus without them).
+screens:
+  enabled: true
+  title: 'Crusalis Exchange'
+  chart-every-seconds: 60
 
 commands:
   nascraft:

@@ -33,5 +33,8 @@ public class EventsManager implements Listener {
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent event) {
         MarketMenuManager.getInstance().clearSession(event.getPlayer());
+        // Positions are cached per player forever otherwise; on a shared database another shard may also change
+        // them while the player is away, so reload on next use.
+        me.bounser.nascraft.market.Portfolio.get().forget(event.getPlayer().getUniqueId());
     }
 }

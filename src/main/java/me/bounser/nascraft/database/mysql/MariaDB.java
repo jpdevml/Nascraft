@@ -48,6 +48,9 @@ public final class MariaDB extends SQLite {
             sql.execute("CREATE TABLE IF NOT EXISTS user_names (uuid VARCHAR(36) PRIMARY KEY, name TEXT)");
             sql.execute("CREATE TABLE IF NOT EXISTS market_schedule (task_id VARCHAR(160) PRIMARY KEY, next_run BIGINT NOT NULL)");
             sql.execute("CREATE TABLE IF NOT EXISTS market_mutex (market_id VARCHAR(128) NOT NULL, identifier VARCHAR(128) NOT NULL, PRIMARY KEY(market_id,identifier))");
+            sql.execute("ALTER TABLE port_items ADD COLUMN IF NOT EXISTS factor DOUBLE DEFAULT 0, ADD COLUMN IF NOT EXISTS trend DOUBLE DEFAULT 0, ADD COLUMN IF NOT EXISTS trend_ticks INT DEFAULT 0, ADD COLUMN IF NOT EXISTS shock DOUBLE DEFAULT 0");
+            sql.execute("CREATE TABLE IF NOT EXISTS portfolio (owner VARCHAR(36) NOT NULL, market_id VARCHAR(128) NOT NULL, identifier VARCHAR(128) NOT NULL, shares BIGINT NOT NULL, cost DOUBLE NOT NULL, PRIMARY KEY(owner,market_id,identifier))");
+            sql.execute("CREATE TABLE IF NOT EXISTS market_news (id BIGINT AUTO_INCREMENT PRIMARY KEY, ts BIGINT NOT NULL, market_id VARCHAR(128), identifier VARCHAR(128), headline TEXT, move DOUBLE)");
             sql.execute("CREATE TABLE IF NOT EXISTS market_control (setting VARCHAR(64) PRIMARY KEY, value INT NOT NULL)");
             sql.execute("INSERT IGNORE INTO market_control(setting,value) VALUES('paused',0)");
         }
@@ -103,6 +106,7 @@ public final class MariaDB extends SQLite {
                 double result = action.call();
                 if (result > 0) ItemProperties.saveItem(db, parent);
                 db.commit();
+                parent.markSharedWrite();
                 return result;
             } catch (Exception ex) {
                 db.rollback();
@@ -159,11 +163,60 @@ public final class MariaDB extends SQLite {
         }
     }
 
+    /** Every shared row in one query. Safe off the main thread: it only reads; apply the result on the main thread. */
+    public java.util.Map<String, ItemProperties.State> readAll() {
+        try (Connection db = DatabaseExecutor.getInstance().getConnection()) {
+            return ItemProperties.retrieveAll(db, null, false);
+        } catch (SQLException ex) { throw new IllegalStateException("Shared state refresh failed", ex); }
+    }
+
+    /**
+     * One market-model tick for all of a market's managed goods in ONE transaction: lock the market's rows with one
+     * query, tick each good on its latest state, write them back as one batch. Same result as {@link #marketTick}
+     * per good, in a handful of round trips instead of four per good. Main thread (it mutates the goods).
+     * Rows are locked in primary-key order, like {@link #restock}, so the two cannot deadlock.
+     */
+    public java.util.Map<Item, me.bounser.nascraft.market.unit.Price.News> marketTick(Port port, List<Item> goods) {
+        java.util.Map<Item, me.bounser.nascraft.market.unit.Price.News> news = new java.util.LinkedHashMap<>();
+        if (goods.isEmpty()) return news;
+        try (Connection db = DatabaseExecutor.getInstance().getConnection()) {
+            db.setAutoCommit(false);
+            try {
+                java.util.Map<String, ItemProperties.State> rows = ItemProperties.retrieveAll(db, port.getId(), true);
+                for (Item item : goods) {
+                    ItemProperties.State row = rows.get(ItemProperties.key(port.getId(), item.getIdentifier()));
+                    if (row == null) throw new SQLException("Market item row missing: " + item.getIdentifier());
+                    ItemProperties.apply(item, row);
+                    var headline = item.getPrice().marketTick();
+                    if (headline != null) news.put(item, headline);
+                }
+                ItemProperties.saveItems(db, goods);
+                db.commit();
+                for (Item item : goods) item.markSharedWrite();
+                return news;
+            } catch (Exception ex) { db.rollback(); throw ex; }
+        } catch (Exception ex) {
+            MarketManager.getInstance().stop();
+            me.bounser.nascraft.Nascraft.getInstance().getLogger().severe("Market tick failed for " + port.getId() + "; trading stopped: " + ex);
+            return java.util.Map.of();
+        }
+    }
+
     public void noise(Item item) {
         trade(item, () -> {
             item.getPrice().applyNoise();
             return 1.0;
         });
+    }
+
+    /** One market-model tick on the authoritative row; the headline (if any) is returned to the caller. */
+    public me.bounser.nascraft.market.unit.Price.News marketTick(Item item) {
+        me.bounser.nascraft.market.unit.Price.News[] news = new me.bounser.nascraft.market.unit.Price.News[1];
+        trade(item, () -> {
+            news[0] = item.getPrice().marketTick();
+            return 1.0;
+        });
+        return news[0];
     }
 
     /** All goods at a port restock as one transaction. A failed tick is never partially applied. */
@@ -180,6 +233,7 @@ public final class MariaDB extends SQLite {
                     ItemProperties.saveItem(db, item);
                 }
                 db.commit();
+                for (Item item : goods) item.markSharedWrite();
             } catch (Exception ex) { db.rollback(); throw ex; }
         } catch (Exception ex) {
             MarketManager.getInstance().stop();

@@ -11,6 +11,8 @@ import me.bounser.nascraft.market.MarketManager;
 import me.bounser.nascraft.market.Port;
 import me.bounser.nascraft.market.OrderBook;
 import me.bounser.nascraft.market.unit.Item;
+import me.bounser.nascraft.market.Portfolio;
+import me.bounser.nascraft.web.ExchangePages;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.util.StringUtil;
@@ -49,11 +51,14 @@ public class MarketCommand extends Command {
             return;
         }
 
+        if (args.length > 0 && exchange(player, args)) return;
+
         if (args.length > 0 && args[0].equalsIgnoreCase("claim")) {
             player.sendMessage("Claims collected: " + OrderBook.get().collect(player));
             return;
         }
         if (args.length > 0 && args[0].equalsIgnoreCase("orders")) {
+            if (ExchangePages.available()) { ExchangePages.open(player, "nascraft-orders"); return; }
             BazaarMenus.orders(player, MarketManager.getInstance().getMarketAt(player.getLocation()), 0);
             return;
         }
@@ -97,6 +102,7 @@ public class MarketCommand extends Command {
 
         // /market global is always available, including while standing in a port.
         if (args.length >= 1 && args[0].equalsIgnoreCase("global")) {
+            if (ExchangePages.available()) { ExchangePages.open(player, ExchangePages.home(MarketManager.getInstance().getGlobalMarket())); return; }
             BazaarMenus.categories(player, MarketManager.getInstance().getGlobalMarket(), 0);
             return;
         }
@@ -131,7 +137,82 @@ public class MarketCommand extends Command {
             port = MarketManager.getInstance().getMarketAt(player.getLocation());
         }
 
+        if (port != null && ExchangePages.available()) { ExchangePages.open(player, ExchangePages.home(port)); return; }
         BazaarMenus.categories(player, port, 0);
+    }
+
+    /** True when the player may trade at {@code market} from where they stand. */
+    private static boolean reachable(Player player, Port market) {
+        return market != null && (market.isGlobal() || market.isInside(player.getLocation()) || player.hasPermission("nascraft.ports.bypass"));
+    }
+
+    /** The exchange pages' commands: home, view, portfolio, trade and shares. Returns false if not one of them. */
+    private boolean exchange(Player player, String[] args) {
+        String sub = args[0].toLowerCase(java.util.Locale.ROOT);
+        switch (sub) {
+            case "home" -> {
+                Port market = args.length > 1 ? MarketManager.getInstance().getPort(args[1]) : MarketManager.getInstance().getMarketAt(player.getLocation());
+                if (market == null) market = MarketManager.getInstance().getGlobalMarket();
+                if (ExchangePages.available() && market != null) ExchangePages.open(player, ExchangePages.home(market));
+                else BazaarMenus.categories(player, market, 0);
+                return true;
+            }
+            case "portfolio" -> {
+                if (ExchangePages.available()) { ExchangePages.open(player, "nascraft-portfolio"); return true; }
+                List<Portfolio.Position> list = Portfolio.get().list(player.getUniqueId());
+                if (list.isEmpty()) player.sendMessage("You hold no shares.");
+                for (Portfolio.Position p : list) {
+                    Port m = MarketManager.getInstance().getPort(p.market());
+                    Item item = m == null ? null : m.getItem(p.identifier());
+                    double value = item == null ? 0 : Portfolio.value(item, p.shares());
+                    player.sendMessage(p.shares() + "x " + (item == null ? p.identifier() : item.getName()) + " @ " + p.market()
+                            + ": worth " + Portfolio.round(value) + " (" + (value >= p.cost() ? "+" : "") + Portfolio.round(value - p.cost()) + ")");
+                }
+                return true;
+            }
+            case "view" -> {
+                if (args.length < 3) return true;
+                Port market = MarketManager.getInstance().getPort(args[1]);
+                Item item = market == null ? null : market.getItem(args[2]);
+                if (item == null) { player.sendMessage("No such good."); return true; }
+                if (ExchangePages.available()) ExchangePages.open(player, ExchangePages.good(item, args.length > 3 && args[3].equals("d")));
+                else MarketMenuManager.getInstance().openBuySellMenu(player, market, item);
+                return true;
+            }
+            case "trade", "shares" -> {
+                if (args.length != 5) {
+                    player.sendMessage("Usage: /market " + sub + " <buy|sell> <market> <good> <amount|all>");
+                    return true;
+                }
+                boolean buy = args[1].equalsIgnoreCase("buy");
+                Port market = MarketManager.getInstance().getPort(args[2]);
+                Item item = market == null ? null : market.getItem(args[3]);
+                if (item == null) { player.sendMessage("No such good."); return true; }
+                if (!reachable(player, market)) { player.sendMessage("You have to be at " + market.getPlainDisplayName() + " to trade there."); return true; }
+                if (sub.equals("shares")) {
+                    long units = args[4].equalsIgnoreCase("all")
+                            ? (buy ? 0 : Portfolio.get().shares(player.getUniqueId(), item)) : parse(args[4]);
+                    player.sendMessage(buy ? Portfolio.get().buy(player, item, units) : Portfolio.get().sell(player, item, units));
+                    return true;
+                }
+                int units;
+                if (args[4].equalsIgnoreCase("all")) {
+                    units = 0;
+                    for (org.bukkit.inventory.ItemStack stack : player.getInventory().getStorageContents())
+                        if (stack != null && stack.isSimilar(item.getItemStack())) units += stack.getAmount();
+                    if (buy || units == 0) { player.sendMessage("You carry no " + item.getName() + "."); return true; }
+                } else units = (int) Math.min(100000, parse(args[4]));
+                if (units <= 0) { player.sendMessage("Choose an amount."); return true; }
+                if (buy) item.buy(units, player.getUniqueId(), true);
+                else item.sell(units, player.getUniqueId(), true);
+                return true;
+            }
+            default -> { return false; }
+        }
+    }
+
+    private static long parse(String text) {
+        try { return Long.parseLong(text); } catch (NumberFormatException ex) { return 0; }
     }
 
     @Override
@@ -146,6 +227,11 @@ public class MarketCommand extends Command {
             options.add("order");
             options.add("cancel");
             options.add("claim");
+            options.add("home");
+            options.add("portfolio");
+            options.add("view");
+            options.add("trade");
+            options.add("shares");
             if (sender.hasPermission("nascraft.ports.bypass"))
                 options.addAll(MarketManager.getInstance().getPortIds());
             return StringUtil.copyPartialMatches(args[0], options, new ArrayList<>());

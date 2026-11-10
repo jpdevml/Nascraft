@@ -58,6 +58,17 @@ public class Price {
     private double yearLow;
     private double allLow;
 
+    // Market model. The quoted price is the supply curve times e^factor; factor wanders like a stock:
+    // pulled back towards the current news shock, pushed by a trend (bull/bear/sideways) and by trades.
+    private double factor;
+    private double trend;
+    private int trendTicks;
+    private double shock;
+    private final double volatility;
+    private final double reversion;
+    private final double depth;
+    private static final java.util.Random RANDOM = new java.util.Random();
+
     private float dayChange;
     private float monthChange;
     private float yearChange;
@@ -84,6 +95,10 @@ public class Price {
 
         taxBuy = settings.getBuyTaxMultiplier();
         taxSell = settings.getSellTaxMultiplier();
+
+        volatility = settings.getVolatility();
+        reversion = settings.getReversion();
+        depth = settings.getDepth();
 
         upperStockThreshold = getStockFromValue(topLimit);
         lowerStockThreshold = getStockFromValue(lowLimit);
@@ -307,7 +322,7 @@ public class Price {
 
     public void updateValue() {
 
-        value = (float) (initialValue * Math.exp(-0.0005 * elasticity * stock));
+        value = (float) (initialValue * Math.exp(-0.0005 * elasticity * stock) * Math.exp(factor));
         enforceLimits();
         updateLimits();
 
@@ -371,7 +386,7 @@ public class Price {
             change = stockChange;
         }
 
-        double cost = integratePiecewise(stock, stock + change);
+        double cost = integratePiecewise(stock, stock + change) * Math.exp(factor);
 
         return roundToDecimals(cost*tax, precission);
     }
@@ -443,6 +458,118 @@ public class Price {
         BigDecimal bd = new BigDecimal(Double.toString(value));
         bd = bd.setScale(decimals, RoundingMode.HALF_UP); // Rounds up if the digit is >= 5
         return (float) bd.doubleValue();
+    }
+
+    // --- Market model ---
+
+    public record News(String headline, double move) { }
+
+    /**
+     * One market tick (price-options.noise.time, a minute by default). Returns a headline when a news event hit.
+     * The factor is an Ornstein-Uhlenbeck walk in log price: it reverts to the shock level at {@code reversion}
+     * per tick, with gaussian moves of {@code volatility} and a trend that runs for 30-180 ticks.
+     */
+    public News marketTick() {
+        if (volatility <= 0) return null;
+        Config config = Config.getInstance();
+        News news = null;
+
+        if (--trendTicks <= 0) {
+            trendTicks = 30 + RANDOM.nextInt(151);
+            double roll = RANDOM.nextDouble();
+            double size = volatility * (0.15 + 0.45 * RANDOM.nextDouble());
+            double chance = config.getMarketTrendChance();
+            trend = roll < chance / 2 ? size : roll < chance ? -size : 0;
+        }
+
+        if (RANDOM.nextDouble() < config.getMarketEventChance()) {
+            double size = config.getMarketEventMin() + (config.getMarketEventMax() - config.getMarketEventMin()) * RANDOM.nextDouble();
+            boolean up = RANDOM.nextBoolean();
+            shock = Math.max(-1.5, Math.min(1.5, shock + (up ? size : -size)));
+            factor += (up ? size : -size) * 0.5; // half lands at once, the rest drifts in
+            news = new News(headline(up), up ? size : -size);
+        }
+
+        shock *= 0.985; // a story fades over a few hours
+        factor += reversion * (shock - factor) + trend + volatility * RANDOM.nextGaussian();
+        clampFactor();
+        updateValue();
+        item.addVolume((int) Math.round(Math.abs(volatility * RANDOM.nextGaussian()) * depth * 100));
+        return news;
+    }
+
+    private static final String[] UP = {
+            "shortage reported", "buyers flood the market", "caravan lost on the road", "guild hoards supply",
+            "a warlord is buying up all of it", "a mine collapse cuts supply", "demand spikes in the capital"};
+    private static final String[] DOWN = {
+            "a glut hits the docks", "merchants dump their stock", "a new vein is found", "a bumper harvest",
+            "a rival market undercuts prices", "warehouses overflow", "a smuggling ring floods the market"};
+
+    private String headline(boolean up) {
+        String[] pool = up ? UP : DOWN;
+        return item.getName() + ": " + pool[RANDOM.nextInt(pool.length)];
+    }
+
+    private void clampFactor() {
+        double max = Config.getInstance().getMarketMaxSwing();
+        factor = Math.max(-max, Math.min(max, factor));
+    }
+
+    /** Price impact per unit (log), or 0 when impact is off. */
+    public double impactPerUnit() { return depth > 0 ? 0.01 / depth : 0; }
+
+    /** A trade of {@code units} (positive = bought from the market) pushes the price. */
+    public void impact(double units) {
+        double k = impactPerUnit();
+        if (k == 0 || units == 0) return;
+        factor += k * units;
+        clampFactor();
+        updateValue();
+    }
+
+    /** Mid price of {@code units} shares walked along the impact curve (before fees). */
+    public double shareCost(long units, boolean buy) {
+        double k = impactPerUnit();
+        if (units <= 0) return 0;
+        if (k == 0) return value * units;
+        return buy ? value * (Math.exp(k * units) - 1) / k : value * (1 - Math.exp(-k * units)) / k;
+    }
+
+    public double getFactor() { return factor; }
+    public double getTrend() { return trend; }
+    public int getTrendTicks() { return trendTicks; }
+    public double getShock() { return shock; }
+    public double getVolatility() { return volatility; }
+
+    public void setMarketState(double factor, double trend, int trendTicks, double shock) {
+        this.factor = factor;
+        this.trend = trend;
+        this.trendTicks = trendTicks;
+        this.shock = shock;
+        updateValue();
+    }
+
+    /**
+     * A stored row's model state and stock together, with ONE price recompute: setting them one after the other
+     * would record an intermediate price (new factor, old stock) in the hour/historical high and low.
+     */
+    public void setMarketStateAndStock(double factor, double trend, int trendTicks, double shock, float stock) {
+        this.factor = factor;
+        this.trend = trend;
+        this.trendTicks = trendTicks;
+        this.shock = shock;
+        this.stock = stock;
+        updateValue();
+    }
+
+    /** Bull, bear or steady: what the trend is doing, for the GUI. */
+    public String getRegime() {
+        if (volatility <= 0) return "Fixed";
+        if (shock > 0.08) return "Shortage";
+        if (shock < -0.08) return "Glut";
+        if (trend > volatility * 0.1) return "Bull run";
+        if (trend < -volatility * 0.1) return "Slump";
+        return "Steady";
     }
 
     public double getStockFromValue(double value) {

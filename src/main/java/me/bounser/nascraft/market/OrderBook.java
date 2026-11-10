@@ -35,6 +35,24 @@ public final class OrderBook {
         }
     }
 
+    // Escrow payloads only ever get compared against the configured stack: cache the (deterministic) decode,
+    // which is far costlier than the string hash. Decoded stacks never leave this class.
+    private static final Map<String, ItemStack> DECODED = Collections.synchronizedMap(new LinkedHashMap<>(256, 0.75f, true) {
+        @Override protected boolean removeEldestEntry(Map.Entry<String, ItemStack> eldest) { return size() > 512; }
+    });
+
+    private static boolean sameGood(String data, ItemStack configured) throws IOException, ClassNotFoundException {
+        ItemStack decoded = DECODED.get(data);
+        if (decoded == null) { decoded = decode(data); DECODED.put(data, decoded); }
+        return decoded.isSimilar(configured);
+    }
+
+    /** Drop the exchange pages' cached reads this change made stale, so the actor sees it on the next refresh. */
+    private static void changed(UUID player, String market, String good) {
+        try { me.bounser.nascraft.web.ExchangePlaceholders.invalidate(player, market, good); }
+        catch (RuntimeException | LinkageError ignored) { } // display cache only; never fail a committed trade
+    }
+
     public static long cents(String value) {
         BigDecimal decimal = new BigDecimal(value).setScale(2, RoundingMode.UNNECESSARY);
         return decimal.movePointRight(2).longValueExact();
@@ -108,30 +126,65 @@ public final class OrderBook {
         }
     }
 
-    public BookView book(Item item) {
+    public BookView book(Item item) { return snapshot(item).book(); }
+
+    /** One standing order as the displays see it (no escrow payload). */
+    public record Level(String owner, long priceCents, int remaining) { }
+
+    /**
+     * Both sides of a good's book from ONE query: the summary plus the levels in fill order (asks cheapest
+     * first, bids highest first, oldest first on ties), so displays can quote any size for any viewer
+     * without another round trip. Read-only; fill() always re-reads under the book lock.
+     */
+    public record Snapshot(boolean tradable, BookView book, List<Level> asks, List<Level> bids) {
+        /** Same result as {@link OrderBook#quote(Item, int, boolean, UUID)} at the time of the snapshot. */
+        public double quote(int amount, boolean buy, UUID taker) {
+            if (!tradable || amount <= 0 || amount > 1000000) throw new IllegalArgumentException("Invalid player-backed good or quantity");
+            String self = taker == null ? null : taker.toString();
+            long cost = 0; int left = amount;
+            for (Level order : buy ? asks : bids) {
+                if (self != null && order.owner().equals(self)) continue;
+                int count = Math.min(left, order.remaining());
+                cost = Math.addExact(cost, product(order.priceCents(), count));
+                left -= count;
+                if (left == 0) break;
+            }
+            return left == 0 && cost <= MAX_TRANSFER_CENTS ? money(cost) : 0;
+        }
+    }
+
+    public Snapshot snapshot(Item item) {
         long sell = 0, buy = 0, ask = 0, bid = 0;
+        List<Level> asks = new ArrayList<>(), bids = new ArrayList<>();
+        ItemStack configured = item.getItemStack();
         try (Connection db = DatabaseExecutor.getInstance().getConnection();
-             PreparedStatement sql = db.prepareStatement("SELECT side, price_cents, remaining, item_data FROM bazaar_orders WHERE market_id=? AND identifier=? AND remaining>0 ORDER BY id")) {
+             PreparedStatement sql = db.prepareStatement("SELECT side, price_cents, remaining, item_data, id, owner FROM bazaar_orders WHERE market_id=? AND identifier=? AND remaining>0 ORDER BY id")) {
             sql.setString(1, item.getPort().getId()); sql.setString(2, item.getIdentifier());
             try (ResultSet rows = sql.executeQuery()) {
                 while (rows.next()) {
                     try {
-                        if (!decode(rows.getString(4)).isSimilar(item.getItemStack())) continue;
+                        if (!sameGood(rows.getString(4), configured)) continue;
                     } catch (IOException | ClassNotFoundException | IllegalArgumentException ex) {
                         throw new SQLException("Invalid escrow item in order book", ex);
                     }
                     long price = rows.getLong(2);
+                    Level level = new Level(rows.getString(6), price, rows.getInt(3));
                     if (rows.getString(1).equals("SELL")) {
                         sell += rows.getInt(3);
                         if (ask == 0 || price < ask) ask = price;
+                        asks.add(level);
                     } else {
                         buy += rows.getInt(3);
                         if (price > bid) bid = price;
+                        bids.add(level);
                     }
                 }
             }
-            return new BookView(sell, buy, ask, bid);
         } catch (SQLException ex) { throw new IllegalStateException("Order book unavailable", ex); }
+        // Rows arrive in id order and List.sort is stable, so this is instantFillOrder(): price, then id.
+        asks.sort(Comparator.comparingLong(Level::priceCents));
+        bids.sort(Comparator.comparingLong(Level::priceCents).reversed());
+        return new Snapshot(item.isPlayerOnly() && item.isParent(), new BookView(sell, buy, ask, bid), List.copyOf(asks), List.copyOf(bids));
     }
 
     /** pageSize includes one look-ahead row; each visible page holds pageSize - 1 entries. */
@@ -176,6 +229,15 @@ public final class OrderBook {
         return result;
     }
 
+    /** Number of open claims, capped like a {@code claims(player, 0, cap)} page, without reading the payloads. */
+    public int claimCount(UUID owner, int cap) {
+        try (Connection db = DatabaseExecutor.getInstance().getConnection();
+             PreparedStatement sql = db.prepareStatement("SELECT COUNT(*) FROM (SELECT id FROM bazaar_claims WHERE owner=? AND status IN ('READY','DELIVERING') LIMIT ?) c")) {
+            sql.setString(1, owner.toString()); sql.setInt(2, cap);
+            try (ResultSet rows = sql.executeQuery()) { return rows.next() ? rows.getInt(1) : 0; }
+        } catch (SQLException ex) { throw new IllegalStateException("Claims unavailable", ex); }
+    }
+
     /**
      * Price-time priority for instant fills: purchases take the lowest asks,
      * while sales take the highest bids. The order id breaks price ties so the
@@ -192,12 +254,13 @@ public final class OrderBook {
             sql.setString(1, item.getPort().getId()); sql.setString(2, item.getIdentifier()); sql.setString(3, side);
             if (limit > 0) sql.setLong(4, limit);
             List<Order> result = new ArrayList<>();
+            ItemStack configured = item.getItemStack();
             try (ResultSet rows = sql.executeQuery()) {
                 while (rows.next()) {
                     String data = rows.getString(5);
                     try {
                         // Never settle old escrow against a reconfigured ItemStack.
-                        if (!decode(data).isSimilar(item.getItemStack())) continue;
+                        if (!sameGood(data, configured)) continue;
                     } catch (IOException | ClassNotFoundException | IllegalArgumentException ex) {
                         throw new SQLException("Invalid escrow item for order " + rows.getLong(1), ex);
                     }
@@ -272,6 +335,7 @@ public final class OrderBook {
                     if (keys.next()) {
                         long id = keys.getLong(1);
                         if (!db.getAutoCommit()) db.commit();
+                        changed(player.getUniqueId(), item.getPort().getId(), item.getIdentifier());
                         return id;
                     }
                 }
@@ -342,6 +406,7 @@ public final class OrderBook {
                     }
                 }
                 db.commit();
+                changed(player.getUniqueId(), item.getPort().getId(), item.getIdentifier());
                 return money(total);
             } catch (Exception ex) {
                 db.rollback();
@@ -365,11 +430,13 @@ public final class OrderBook {
         try (Connection db = DatabaseExecutor.getInstance().getConnection()) {
             db.setAutoCommit(false);
             // Lock the order row as well as the book: competing fill/cancel must serialize.
+            String market, good;
             try (PreparedStatement sql = db.prepareStatement("SELECT market_id, identifier FROM bazaar_orders WHERE id=? AND owner=? AND remaining>0")) {
                 sql.setLong(1, id); sql.setString(2, player.getUniqueId().toString());
                 try (ResultSet row = sql.executeQuery()) {
                     if (!row.next()) return false;
-                    lockBook(db, row.getString(1), row.getString(2));
+                    market = row.getString(1); good = row.getString(2);
+                    lockBook(db, market, good);
                 }
             }
             String lockSuffix = me.bounser.nascraft.database.DatabaseManager.get().getDatabase()
@@ -384,7 +451,9 @@ public final class OrderBook {
                         update.setLong(1, id); if (update.executeUpdate() != 1) throw new SQLException("Order already closed");
                     }
                 }
-                db.commit(); return true;
+                db.commit();
+                changed(player.getUniqueId(), market, good);
+                return true;
             } catch (Exception ex) { db.rollback(); throw ex; }
         } catch (Exception ex) { Nascraft.getInstance().getLogger().warning("Cancel failed: " + ex); return false; }
         finally { busy = false; }
@@ -440,6 +509,7 @@ public final class OrderBook {
             }
         } catch (Exception ex) { Nascraft.getInstance().getLogger().severe("Claim failed; inspect DELIVERING claims: " + ex); }
         finally { busy = false; }
+        if (done > 0) changed(player.getUniqueId(), null, null);
         return done;
     }
 }

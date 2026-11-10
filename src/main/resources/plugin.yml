@@ -4,6 +4,6 @@ main: me.bounser.nascraft.Nascraft
 api-version: '1.21'
 # MariaDB is a JDBC backend, not a Bukkit plugin; database selection is in config.yml.
 depend: [ Vault ]
-softdepend: [ DiscordSRV ]
+softdepend: [ DiscordSRV, PlaceholderAPI, CrusalisScreens ]
 authors: [ bounser, jamesperreaultdev, Error11O ]
 description: Port-based local markets and trading

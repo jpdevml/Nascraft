@@ -36,6 +36,8 @@ public interface Database {
     void saveMonthPrice(Item item, Instant instant);
     void saveHistoryPrices(Item item, Instant instant);
     List<Instant> getDayPrices(Item item);
+    /** Newest prices_day row id per good, keyed port_id + '\0' + identifier; null when unsupported or on error. */
+    default java.util.Map<String, Long> latestDayRowIds() { return null; }
     List<Instant> getMonthPrices(Item item);
     List<Instant> getYearPrices(Item item);
     List<Instant> getAllPrices(Item item);

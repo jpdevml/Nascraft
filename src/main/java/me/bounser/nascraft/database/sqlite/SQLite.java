@@ -75,6 +75,20 @@ public class SQLite implements Database {
                             "taxes DOUBLE, " +
                             "PRIMARY KEY(port_id, identifier)");
 
+            // Market-model columns (added after 2.0.0): ignore "duplicate column" on existing databases.
+            for (String column : new String[]{"factor DOUBLE DEFAULT 0", "trend DOUBLE DEFAULT 0",
+                    "trend_ticks INTEGER DEFAULT 0", "shock DOUBLE DEFAULT 0"}) {
+                try (Statement alter = connection.createStatement()) {
+                    alter.execute("ALTER TABLE port_items ADD COLUMN " + column);
+                } catch (SQLException ignored) { }
+            }
+            createTable(connection, "portfolio",
+                    "owner TEXT NOT NULL, market_id TEXT NOT NULL, identifier TEXT NOT NULL, " +
+                            "shares INTEGER NOT NULL, cost DOUBLE NOT NULL, PRIMARY KEY(owner, market_id, identifier)");
+            createTable(connection, "market_news",
+                    "id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, market_id TEXT, identifier TEXT, " +
+                            "headline TEXT, move DOUBLE");
+
             createTable(connection, "prices_day",
                     "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
                             "port_id TEXT, " +
@@ -170,9 +184,18 @@ public class SQLite implements Database {
                 if (!item.isPlayerOnly()) snapshot.add(item);
 
         DatabaseExecutor.getInstance().executeWithRetry(connection -> {
+            // One transaction and one batched statement: SQLite otherwise commits (and syncs) once per good.
             try {
-                for (Item item : snapshot)
-                    ItemProperties.saveItem(connection, item);
+                connection.setAutoCommit(false);
+                try {
+                    ItemProperties.saveItems(connection, snapshot);
+                    connection.commit();
+                } catch (SQLException e) {
+                    connection.rollback();
+                    throw e;
+                } finally {
+                    connection.setAutoCommit(true);
+                }
             } catch (SQLException e) {
                 Nascraft.getInstance().getLogger().warning("Failed to save items: " + e.getMessage());
             }
@@ -251,6 +274,20 @@ public class SQLite implements Database {
         } catch (SQLException e) {
             Nascraft.getInstance().getLogger().warning(e.getMessage());
             return Collections.emptyList();
+        }
+    }
+
+    @Override
+    public java.util.Map<String, Long> latestDayRowIds() {
+        java.util.Map<String, Long> ids = new java.util.HashMap<>();
+        try (Connection connection = DatabaseExecutor.getInstance().getConnection();
+             Statement sql = connection.createStatement();
+             java.sql.ResultSet rows = sql.executeQuery("SELECT port_id, identifier, MAX(id) FROM prices_day GROUP BY port_id, identifier")) {
+            while (rows.next()) ids.put(ItemProperties.key(rows.getString(1), rows.getString(2)), rows.getLong(3));
+            return ids;
+        } catch (SQLException e) {
+            Nascraft.getInstance().getLogger().warning(e.getMessage());
+            return null;
         }
     }
 

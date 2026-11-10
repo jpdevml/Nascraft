@@ -117,6 +117,7 @@ public class MarketManager {
         ignoredKeys = Config.getInstance().getIgnoredKeys();
 
         TasksManager.getInstance().scheduleRestockTasks();
+        me.bounser.nascraft.web.ExchangePages.write();
     }
 
     public Collection<Port> getPorts() { return ports.values(); }
@@ -138,7 +139,8 @@ public class MarketManager {
         return null;
     }
 
-    public void stopLocally() { localHalt = true; active = false; }
+    // synchronized: the shared scheduler can stop() from an async task while the status poll applies on the main thread.
+    public synchronized void stopLocally() { localHalt = true; active = false; }
     public void stop() {
         stopLocally();
         if (DatabaseManager.get().getDatabase() instanceof me.bounser.nascraft.database.mysql.MariaDB maria) {
@@ -149,11 +151,13 @@ public class MarketManager {
     public void resume() {
         if (DatabaseManager.get().getDatabase() instanceof me.bounser.nascraft.database.mysql.MariaDB maria)
             maria.setPaused(false);
-        localHalt = false;
-        active = true;
+        synchronized (this) {
+            localHalt = false;
+            active = true;
+        }
     }
     /** Only called by the shared-status poller; never writes the DB from a poll. */
-    public void syncPaused(boolean paused) { active = !paused && !localHalt && !Config.getInstance().isMarketClosed(); }
+    public synchronized void syncPaused(boolean paused) { active = !paused && !localHalt && !Config.getInstance().isMarketClosed(); }
 
     public boolean getActive() { return active; }
 

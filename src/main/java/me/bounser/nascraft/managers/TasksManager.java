@@ -52,20 +52,81 @@ public class TasksManager {
         saveInstants();
         scheduleRestockTasks();
         if (shared() != null) {
+            // The database round trips run off the main thread; their results are applied on it, so ordering
+            // against stop()/trades (all main-thread) is unchanged.
             Bukkit.getScheduler().runTaskTimer(Nascraft.getInstance(), () -> {
-                try { MarketManager.getInstance().syncPaused(shared().isPaused()); }
-                catch (RuntimeException ex) {
-                    Nascraft.getInstance().getLogger().severe("Shared trading status unavailable: " + ex);
-                    MarketManager.getInstance().stopLocally();
-                }
+                var maria = shared();
+                if (maria == null || !pausePollBusy.compareAndSet(false, true)) return;
+                async(() -> {
+                    try {
+                        boolean paused = maria.isPaused();
+                        sync(() -> MarketManager.getInstance().syncPaused(paused));
+                    } catch (RuntimeException ex) {
+                        sync(() -> {
+                            Nascraft.getInstance().getLogger().severe("Shared trading status unavailable: " + ex);
+                            MarketManager.getInstance().stopLocally();
+                        });
+                    } finally { pausePollBusy.set(false); }
+                });
             }, 40L, 40L);
             Bukkit.getScheduler().runTaskTimer(Nascraft.getInstance(), () -> {
                 if (!MarketManager.getInstance().getActive()) return;
-                for (Item item : allParentItems()) if (!item.isPlayerOnly()) shared().refresh(item);
+                refreshShared(null);
             }, 200L, 200L);
         }
 
         DatabaseManager.get().getDatabase().purgeHistory();
+    }
+
+    private final java.util.concurrent.atomic.AtomicBoolean pausePollBusy = new java.util.concurrent.atomic.AtomicBoolean();
+    private final java.util.concurrent.atomic.AtomicBoolean refreshBusy = new java.util.concurrent.atomic.AtomicBoolean();
+
+    private static void async(Runnable task) { Bukkit.getScheduler().runTaskAsynchronously(Nascraft.getInstance(), task); }
+
+    private static void sync(Runnable task) {
+        if (Nascraft.getInstance().isEnabled()) Bukkit.getScheduler().runTask(Nascraft.getInstance(), task);
+    }
+
+    /**
+     * Pulls every shared good from MariaDB in ONE query off the main thread (it used to be one query per good, on
+     * it), then applies the rows on the main thread. A good this shard wrote in the meantime keeps its newer local
+     * state. {@code then} (main thread, may be null) runs after the rows are applied; not at all if the read failed.
+     */
+    private void refreshShared(Runnable then) {
+        var maria = shared();
+        if (maria == null) { if (then != null) then.run(); return; }
+        if (then == null && !refreshBusy.compareAndSet(false, true)) return;
+        List<Item> items = new ArrayList<>();
+        for (Item item : allParentItems()) if (!item.isPlayerOnly()) items.add(item);
+        int[] versions = new int[items.size()];
+        for (int i = 0; i < versions.length; i++) versions[i] = items.get(i).getSharedWrites();
+        async(() -> {
+            try {
+                var rows = maria.readAll();
+                sync(() -> {
+                    for (int i = 0; i < versions.length; i++) {
+                        Item item = items.get(i);
+                        if (item.getSharedWrites() != versions[i]) continue;
+                        var row = rows.get(me.bounser.nascraft.database.commands.ItemProperties.key(item.getPort().getId(), item.getIdentifier()));
+                        if (row != null) me.bounser.nascraft.database.commands.ItemProperties.apply(item, row);
+                    }
+                    if (then != null) then.run();
+                });
+            } catch (RuntimeException ex) {
+                sync(() -> {
+                    Nascraft.getInstance().getLogger().severe(ex.getMessage() + ": " + ex.getCause());
+                    MarketManager.getInstance().stopLocally();
+                });
+            } finally { if (then == null) refreshBusy.set(false); }
+        });
+    }
+
+    /** {@code maria.due(task)} off the main thread; {@code run} goes to the main thread when this shard won the tick. */
+    private void whenDue(me.bounser.nascraft.database.mysql.MariaDB maria, String task, long periodSeconds, Runnable run) {
+        async(() -> {
+            try { if (maria.due(task, periodSeconds)) sync(run); }
+            catch (RuntimeException ex) { Nascraft.getInstance().getLogger().severe("Shared scheduler: " + ex.getMessage()); }
+        });
     }
 
     private me.bounser.nascraft.database.mysql.MariaDB shared() {
@@ -115,15 +176,38 @@ public class TasksManager {
             if (!Config.getInstance().getPriceNoise()) return;
 
             var maria = shared();
-            if (maria != null && (!MarketManager.getInstance().getActive()
-                    || !maria.due("noise", Math.max(1, Config.getInstance().getNoiseTime())))) return;
-            for (Item item : allParentItems())
-                if (!item.isPlayerOnly()) {
-                    if (maria != null) maria.noise(item);
-                    else item.getPrice().applyNoise();
-                }
+            if (maria == null) { noiseTick(null); return; }
+            if (!MarketManager.getInstance().getActive()) return;
+            whenDue(maria, "noise", Math.max(1, Config.getInstance().getNoiseTime()), () -> {
+                if (MarketManager.getInstance().getActive()) noiseTick(maria);
+            });
 
         }, (long) delay * ticksPerSecond, (long) Config.getInstance().getNoiseTime() * ticksPerSecond);
+    }
+
+    private void noiseTick(me.bounser.nascraft.database.mysql.MariaDB maria) {
+        if (!Config.getInstance().getPriceNoise()) return;
+        boolean model = Config.getInstance().getMarketModel();
+        if (model && maria != null) {
+            // One transaction per market instead of one per good.
+            List<Port> markets = new ArrayList<>(MarketManager.getInstance().getPorts());
+            if (MarketManager.getInstance().getGlobalMarket() != null) markets.add(MarketManager.getInstance().getGlobalMarket());
+            for (Port market : markets) {
+                List<Item> goods = new ArrayList<>();
+                for (Item item : market.getParentItems()) if (!item.isPlayerOnly()) goods.add(item);
+                maria.marketTick(market, goods).forEach(MarketNews.get()::publish);
+            }
+            return;
+        }
+        for (Item item : allParentItems())
+            if (!item.isPlayerOnly()) {
+                if (model) {
+                    var news = item.getPrice().marketTick();
+                    if (news != null) MarketNews.get().publish(item, news);
+                }
+                else if (maria != null) maria.noise(item);
+                else item.getPrice().applyNoise();
+            }
     }
 
     private void saveDataTask() {
@@ -138,21 +222,26 @@ public class TasksManager {
         Bukkit.getScheduler().runTaskTimer(Nascraft.getInstance(), () -> {
 
             var maria = shared();
-            if (maria != null && (!MarketManager.getInstance().getActive() || !maria.due("history", 60))) return;
-            for (Item item : allParentItems()) {
-                if (item.isPlayerOnly()) continue;
-                if (maria != null) maria.refresh(item);
-
-                item.getItemStats().addInstant(new Instant(
-                        LocalDateTime.now(),
-                        item.getPrice().getValue(),
-                        item.getVolume()
-                ));
-
-                item.restartVolume();
-            }
+            if (maria == null) { recordInstants(); return; }
+            if (!MarketManager.getInstance().getActive()) return;
+            // The winner records the authoritative prices: one batched refresh first (was one query per good).
+            whenDue(maria, "history", 60, () -> refreshShared(this::recordInstants));
 
         }, 2400, 60L * ticksPerSecond);
+    }
+
+    private void recordInstants() {
+        for (Item item : allParentItems()) {
+            if (item.isPlayerOnly()) continue;
+
+            item.getItemStats().addInstant(new Instant(
+                    LocalDateTime.now(),
+                    item.getPrice().getValue(),
+                    item.getVolume()
+            ));
+
+            item.restartVolume();
+        }
     }
 
     private void hourlyTask() {
@@ -204,7 +293,19 @@ public class TasksManager {
         // The countdown runs off the main thread; the restock itself mutates
         // shared stock and announces to players (Bukkit API), so it is marshaled
         // back onto the main thread when the timer fires.
-        BukkitTask task = Bukkit.getScheduler().runTaskLaterAsynchronously(Nascraft.getInstance(), () ->
+        BukkitTask task = Bukkit.getScheduler().runTaskLaterAsynchronously(Nascraft.getInstance(), () -> {
+            if (generation != restockGeneration) return;
+            // The shared turn check is a DB transaction: take it here, on the async countdown thread, not on main.
+            var sharedDb = shared();
+            boolean won;
+            try {
+                won = sharedDb == null || (MarketManager.getInstance().getActive()
+                        && sharedDb.due("restock:" + port.getId(), (long) minutes * 60));
+            } catch (RuntimeException ex) {
+                Nascraft.getInstance().getLogger().severe("Shared scheduler: " + ex.getMessage());
+                won = false;
+            }
+            final boolean due = won;
                 Bukkit.getScheduler().runTask(Nascraft.getInstance(), () -> {
 
                     // A reload happened while we were counting down: drop this chain.
@@ -214,9 +315,7 @@ public class TasksManager {
                     Port currentPort = MarketManager.getInstance().getPort(port.getId());
                     if (currentPort == null) return;
 
-                    var maria = shared();
-                    boolean shouldRestock = maria == null || (MarketManager.getInstance().getActive()
-                            && maria.due("restock:" + currentPort.getId(), (long) minutes * 60));
+                    boolean shouldRestock = due && (shared() == null || MarketManager.getInstance().getActive());
                     if (shouldRestock) currentPort.restock();
 
                     if (shouldRestock && Config.getInstance().getRestockAnnounceEnabled())
@@ -224,7 +323,8 @@ public class TasksManager {
 
                     scheduleNextRestock(currentPort);
 
-                }), (long) minutes * 60 * ticksPerSecond);
+                });
+        }, (long) minutes * 60 * ticksPerSecond);
 
         restockTasks.put(port.getId(), task);
     }

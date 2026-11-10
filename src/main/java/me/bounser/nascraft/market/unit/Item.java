@@ -255,6 +255,7 @@ public class Item {
         }
 
         stockItem.addStock(-stockNeeded);
+        price.impact(amount * multiplier);
 
         completedPlayerTrade(player, amount, worth, true);
 
@@ -380,6 +381,7 @@ public class Item {
         }
 
         stockItem.addStock((int) (amount * multiplier));
+        price.impact(-amount * multiplier);
 
         worth = RoundUtils.round(worth);
 
@@ -476,6 +478,21 @@ public class Item {
     }
 
     public boolean hasStock() { return getStock() > 0; }
+
+    // Bumped (main thread) whenever this shard commits the good's shared row, so an async refresh read that
+    // started earlier is not applied over the newer local state.
+    private int sharedWrites;
+
+    public int getSharedWrites() { return parent != null ? parent.getSharedWrites() : sharedWrites; }
+
+    public void markSharedWrite() { if (parent != null) parent.markSharedWrite(); else sharedWrites++; }
+
+    private volatile double changeLastDayCached;
+
+    /** 24h change as a fraction, refreshed by the chart task (no database read). */
+    public double getChangeLastDayCached() { return changeLastDayCached; }
+
+    public void setChangeLastDayCached(double change) { changeLastDayCached = change; }
 
     public double getChangeLastDay() {
 

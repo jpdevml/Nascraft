@@ -130,6 +130,24 @@ public class Config {
         return config.getInt("price-options.noise.time", 60);
     }
 
+    // Market model (stock-market style moves) and shares.
+
+    public boolean getMarketModel() { return config.getBoolean("price-options.market.enabled", true); }
+    public double getMarketEventChance() { return config.getDouble("price-options.market.event-chance", 0.002); }
+    public double getMarketEventMin() { return config.getDouble("price-options.market.event-size.min", 0.12); }
+    public double getMarketEventMax() { return config.getDouble("price-options.market.event-size.max", 0.35); }
+    public double getMarketTrendChance() { return config.getDouble("price-options.market.trend-chance", 0.6); }
+    public double getMarketMaxSwing() { return config.getDouble("price-options.market.max-swing", 0.9); }
+    public boolean getMarketNewsBroadcast() { return config.getBoolean("price-options.market.broadcast-news", true); }
+
+    public boolean getSharesEnabled() { return config.getBoolean("shares.enabled", true); }
+    public double getSharesFee() { return config.getDouble("shares.fee", 0.015); }
+    public long getSharesMax() { return config.getLong("shares.max-per-good", 2000); }
+
+    public boolean getScreensEnabled() { return config.getBoolean("screens.enabled", true); }
+    public int getScreensChartMinutes() { return config.getInt("screens.chart-every-seconds", 60); }
+    public String getScreensTitle() { return config.getString("screens.title", "Crusalis Exchange"); }
+
     public float getNoiseMultiplier() {
         return (float) config.getDouble("price-options.noise.intensity-multiplier", 1);
     }
@@ -350,8 +368,16 @@ public class Config {
             noiseIntensity = 0;
         }
 
+        double volatility = playerOnly ? 0 : resolveDouble(override + ".volatility", item + ".volatility",
+                config.getDouble("price-options.market.default-volatility", 0.006));
+        double reversion = resolveDouble(override + ".reversion", item + ".reversion",
+                config.getDouble("price-options.market.default-reversion", 0.02));
+        double depth = resolveDouble(override + ".depth", item + ".depth",
+                config.getDouble("price-options.market.default-depth", 128));
+
         return new GoodSettings(initialPrice, elasticity, support, resistance, noiseIntensity,
-                taxBuy, taxSell, lowLimit, highLimit, restricted, startingStock, restockAmount, playerOnly);
+                taxBuy, taxSell, lowLimit, highLimit, restricted, startingStock, restockAmount, playerOnly)
+                .market(volatility, reversion, depth);
     }
 
     private double resolveDouble(String portPath, String itemPath, double fallback) {

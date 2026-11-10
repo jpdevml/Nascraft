@@ -115,6 +115,13 @@ public final class Nascraft extends JavaPlugin {
         if (config.isCommandEnabled("sellall")) new SellAllCommand();
 
         Bukkit.getPluginManager().registerEvents(new EventsManager(), this);
+
+        // Exchange pages (CrusalisScreens) and their placeholders. Screens may enable after us, so wait a tick.
+        if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI"))
+            new me.bounser.nascraft.web.ExchangePlaceholders().register();
+        Bukkit.getScheduler().runTask(this, me.bounser.nascraft.web.ExchangePages::write);
+        Bukkit.getScheduler().runTaskTimer(this, me.bounser.nascraft.web.ExchangeCharts::refresh,
+                20L * 20, 20L * Math.max(15, config.getScreensChartMinutes()));
     }
 
     @Override

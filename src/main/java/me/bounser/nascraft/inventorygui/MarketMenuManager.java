@@ -330,9 +330,11 @@ public class MarketMenuManager {
 
     public List<String> getLoreFromItem(Item item, String lore, Player viewer) {
 
-        OrderBook.BookView book = item.isPlayerOnly() ? OrderBook.get().book(item) : null;
-        double playerBuy = book == null ? 0 : viewer == null ? book.bestAskCents() / 100.0 : OrderBook.get().quote(item, 1, true, viewer.getUniqueId());
-        double playerSell = book == null ? 0 : viewer == null ? book.bestBidCents() / 100.0 : OrderBook.get().quote(item, 1, false, viewer.getUniqueId());
+        // One order-book query per slot (it used to be three: the book plus a buy and a sell quote).
+        OrderBook.Snapshot snapshot = item.isPlayerOnly() ? OrderBook.get().snapshot(item) : null;
+        OrderBook.BookView book = snapshot == null ? null : snapshot.book();
+        double playerBuy = book == null ? 0 : viewer == null ? book.bestAskCents() / 100.0 : snapshot.quote(1, true, viewer.getUniqueId());
+        double playerSell = book == null ? 0 : viewer == null ? book.bestBidCents() / 100.0 : snapshot.quote(1, false, viewer.getUniqueId());
         double valueAnHourAgo = item.getPrice().getValueAnHourAgo();
 
         float change = item.isPlayerOnly() || valueAnHourAgo == 0 ? 0 :

@@ -23,6 +23,11 @@ public class GoodSettings {
     private final int restockAmount;
     private final boolean playerOnly;
 
+    // Market model: log-price volatility per tick, pull back to fair value per tick, units for a 1% move.
+    private double volatility;
+    private double reversion = 0.02;
+    private double depth = 128;
+
     public GoodSettings(float initialPrice,
                         float elasticity,
                         float support,
@@ -70,4 +75,16 @@ public class GoodSettings {
     public int getStartingStock() { return startingStock; }
     public int getRestockAmount() { return restockAmount; }
     public boolean isPlayerOnly() { return playerOnly; }
+
+    public GoodSettings market(double volatility, double reversion, double depth) {
+        this.volatility = Math.max(0, volatility);
+        this.reversion = Math.max(0.0005, Math.min(1, reversion));
+        this.depth = depth;
+        return this;
+    }
+
+    public double getVolatility() { return volatility; }
+    public double getReversion() { return reversion; }
+    /** Units traded that move the price by 1%; 0 or less turns trade impact off. */
+    public double getDepth() { return depth; }
 }

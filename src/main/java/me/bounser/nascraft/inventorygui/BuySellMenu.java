@@ -77,6 +77,10 @@ public final class BuySellMenu {
                         manager.legacy(Lang.get().message(Message.GUI_CATEGORY_BACK_NAME))));
         }
 
+        // One order-book read quotes every button (it used to be one query per button).
+        OrderBook.Snapshot snapshot = item.isPlayerOnly() ? OrderBook.get().snapshot(item) : null;
+        java.util.UUID taker = viewer == null ? null : viewer.getUniqueId();
+
         // Buy buttons
 
         HashMap<Integer, Integer> buyButtons = config.getBuySellBuySlots();
@@ -90,7 +94,7 @@ public final class BuySellMenu {
             String name = manager.legacy(Lang.get().message(Message.GUI_BUYSELL_BUY_BUTTONS_NAME)
                     .replace("[AMOUNT]", String.valueOf(amount)));
 
-            double quote = item.isPlayerOnly() ? OrderBook.get().quote(item, amount, true, viewer == null ? null : viewer.getUniqueId()) : item.buyPrice(amount);
+            double quote = item.isPlayerOnly() ? snapshot.quote(amount, true, taker) : item.buyPrice(amount);
             List<String> lore = manager.legacyLines(Lang.get().message(Message.GUI_BUYSELL_BUY_BUTTONS_LORE)
                     .replace("[AMOUNT]", String.valueOf(amount))
                     .replace("[WORTH]", item.isPlayerOnly() && quote == 0
@@ -120,7 +124,7 @@ public final class BuySellMenu {
             String name = manager.legacy(Lang.get().message(Message.GUI_BUYSELL_SELL_BUTTONS_NAME)
                     .replace("[AMOUNT]", String.valueOf(amount)));
 
-            double quote = item.isPlayerOnly() ? OrderBook.get().quote(item, amount, false, viewer == null ? null : viewer.getUniqueId()) : item.sellPrice(amount);
+            double quote = item.isPlayerOnly() ? snapshot.quote(amount, false, taker) : item.sellPrice(amount);
             List<String> lore = manager.legacyLines(Lang.get().message(Message.GUI_BUYSELL_SELL_BUTTONS_LORE)
                     .replace("[AMOUNT]", String.valueOf(amount))
                     .replace("[WORTH]", item.isPlayerOnly() && quote == 0
